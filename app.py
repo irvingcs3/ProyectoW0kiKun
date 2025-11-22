@@ -1,126 +1,386 @@
-# app.py
+"""Aplicación de escritorio demo para los servicios criptográficos solicitados.
+
+Características principales:
+- Inicio de sesión seguro con hash + sal (SHA-256) y base de datos simulada.
+- Generación de llaves públicas y privadas por usuario (lista para persistir en DB).
+- Cambio de contraseña validando la anterior.
+- Carga y descarga de archivos de código (simulando cifrado con AES) asociados al usuario.
+
+Al migrar a una base de datos real, basta con reemplazar las funciones en
+``storage.py`` por consultas SQL o llamadas ORM en los puntos marcados con TODO.
+"""
+from typing import Optional
+
 import customtkinter as ctk
 from tkinter import messagebox
-from usuario import Usuario
-from auth_utils import hash_password, USUARIOS_REGISTRADOS, NEXT_USER_ID
 
-# --- Lógica de Autenticación Segura ---
-
-def registrar_usuario(nombre_usuario: str, password: str):
-    """Registra un nuevo usuario, hasheando la contraseña antes de guardarla."""
-    global NEXT_USER_ID
-    
-    if not (4 <= len(password) <= 20):
-        return False, "La contraseña debe tener entre 4 y 20 caracteres."
-    
-    if any(u.nombre_usuario == nombre_usuario for u in USUARIOS_REGISTRADOS):
-        return False, f"El usuario '{nombre_usuario}' ya existe."
-
-    # 1. GENERACIÓN SEGURA: Obtener el hash y el salt
-    password_hash, salt = hash_password(password)
-
-    # 2. Almacenar el hash y el salt
-    nuevo_usuario = Usuario(
-        id=NEXT_USER_ID,
-        nombre_usuario=nombre_usuario,
-        password_hash=password_hash,
-        salt=salt
-    )
-    USUARIOS_REGISTRADOS.append(nuevo_usuario)
-    NEXT_USER_ID += 1
-    
-    return True, f"Usuario '{nombre_usuario}' registrado con ID: {nuevo_usuario.id}"
+from models import CodeFile, KeyPair, User
+from storage import (
+    authenticate,
+    create_user,
+    generate_and_store_keys,
+    get_code_file,
+    get_keys_for_user,
+    list_code_files,
+    seed_demo_user,
+    store_code_file,
+    update_password,
+)
 
 
-def iniciar_sesion(nombre_usuario: str, password: str) -> (bool, str):
-    """Verifica la contraseña comparando hashes (Autenticación real)."""
-    
-    # 1. Buscar usuario y recuperar el hash y salt almacenados
-    usuario = next(
-        (u for u in USUARIOS_REGISTRADOS if u.nombre_usuario == nombre_usuario),
-        None
-    )
-
-    if not usuario:
-        # Evitar dar pistas sobre si el usuario existe o no
-        return False, "Usuario o contraseña incorrectos."
-        
-    # 2. CALCULAR HASH DE PRUEBA: Hashear la contraseña ingresada con el salt ALMACENADO
-    hash_prueba, _ = hash_password(password, salt=usuario.salt)
-    
-    # 3. COMPARACIÓN SEGURA
-    if hash_prueba == usuario.password_hash:
-        return True, f"¡Bienvenido, {nombre_usuario}! Acceso Autorizado."
-    else:
-        return False, "Usuario o contraseña incorrectos."
-
-# --- Interfaz Gráfica (CustomTkinter) ---
-
-class AuthApp(ctk.CTk):
-    def __init__(self):
+class SecureApp(ctk.CTk):
+    def __init__(self) -> None:
         super().__init__()
-        
-        # 1. Configuración de la Ventana
-        self.title("🛡️ Proyecto Criptográfico - Login Seguro")
-        self.geometry("400x400")
+        self.current_user: Optional[User] = None
+
+        seed_demo_user()  # crea usuario "lider" / "123456" para probar
+
+        # Configuración general de la ventana
+        self.title("🛡️ Plataforma Criptográfica Demo")
+        self.geometry("1080x640")
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
-        # 2. Marco Principal (Contenedor de widgets)
-        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_frame.pack(pady=40, padx=40, fill="both", expand=True) 
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=2)
 
-        # 3. Widgets
-        self.label = ctk.CTkLabel(self.main_frame, text="ACCESO REQUERIDO", 
-                                  font=ctk.CTkFont(size=20, weight="bold"))
-        self.label.pack(pady=10)
+        self.info_panel = self._build_info_panel()
+        self.info_panel.grid(row=0, column=0, sticky="nsew")
 
-        self.username_entry = ctk.CTkEntry(self.main_frame, placeholder_text="Nombre de Usuario")
-        self.username_entry.pack(pady=12, padx=10)
+        self.content = ctk.CTkFrame(self, fg_color="transparent")
+        self.content.grid(row=0, column=1, sticky="nsew", padx=18, pady=18)
+        self.content.rowconfigure(0, weight=1)
+        self.content.columnconfigure(0, weight=1)
 
-        self.password_entry = ctk.CTkEntry(self.main_frame, placeholder_text="Contraseña", show="*")
-        self.password_entry.pack(pady=12, padx=10)
+        self.login_frame: Optional[ctk.CTkFrame] = None
+        self.dashboard: Optional[ctk.CTkFrame] = None
+        self.tabs: Optional[ctk.CTkTabview] = None
 
-        self.login_button = ctk.CTkButton(self.main_frame, text="Iniciar Sesión", command=self.handle_login)
-        self.login_button.pack(pady=10, padx=10)
+        self.render_login()
 
-        self.register_button = ctk.CTkButton(self.main_frame, text="Registrar Nuevo Usuario", 
-                                             command=self.handle_register, fg_color="#3B8ED0", hover_color="#36719F")
-        self.register_button.pack(pady=5, padx=10)
-        
+    # ---- Panel lateral de contexto ----
+    def _build_info_panel(self) -> ctk.CTkFrame:
+        panel = ctk.CTkFrame(self, corner_radius=0)
+        panel.rowconfigure(3, weight=1)
 
-    def handle_login(self):
-        """Maneja el evento de inicio de sesión."""
+        ctk.CTkLabel(
+            panel,
+            text="Servicios Criptográficos",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            anchor="w",
+        ).pack(fill="x", padx=18, pady=(20, 8))
+
+        bullets = (
+            "Confidencialidad: cifrado simulado con AES para archivos almacenados.",
+            "Integridad: firmas digitales (hash + RSA) detectan cambios no autorizados.",
+            "Autenticación: contraseñas con hash + sal en lugar de texto plano.",
+            "Control de acceso: llaves RSA para líderes y senior devs.",
+        )
+        for text in bullets:
+            ctk.CTkLabel(panel, text=f"• {text}", wraplength=280, justify="left").pack(
+                fill="x", padx=18, pady=4
+            )
+
+        ctk.CTkLabel(
+            panel,
+            text="Algoritmos propuestos",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            anchor="w",
+        ).pack(fill="x", padx=18, pady=(16, 6))
+
+        algo_box = ctk.CTkTextbox(panel, height=180, wrap="word")
+        algo_box.insert(
+            "1.0",
+            "AES → Cifrar/descifrar archivos en reposo.\n"
+            "RSA → Autenticación y reparto de llaves.\n"
+            "Firma digital → Hash + RSA para integridad.\n\n"
+            "Nota: reemplaza este simulador por una base de datos real sin cambiar la UI.",
+        )
+        algo_box.configure(state="disabled")
+        algo_box.pack(fill="both", expand=True, padx=18, pady=(4, 18))
+        return panel
+
+    # ---- Pantalla de login/registro ----
+    def render_login(self) -> None:
+        if self.dashboard:
+            self.dashboard.destroy()
+        if self.login_frame:
+            self.login_frame.destroy()
+
+        self.login_frame = ctk.CTkFrame(self.content, corner_radius=12)
+        self.login_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.login_frame.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self.login_frame,
+            text="Acceso Seguro",
+            font=ctk.CTkFont(size=26, weight="bold"),
+        ).pack(pady=(22, 6))
+        ctk.CTkLabel(
+            self.login_frame,
+            text="Demo con hash + sal (SHA-256) y almacenamiento en memoria.",
+            text_color="gray",
+        ).pack(pady=(0, 14))
+
+        ctk.CTkLabel(self.login_frame, text="Usuario").pack(pady=(6, 0))
+        self.username_entry = ctk.CTkEntry(self.login_frame, placeholder_text="ej: lider")
+        self.username_entry.pack(fill="x", padx=48, pady=6)
+
+        ctk.CTkLabel(self.login_frame, text="Contraseña").pack(pady=(6, 0))
+        self.password_entry = ctk.CTkEntry(self.login_frame, placeholder_text="••••••", show="*")
+        self.password_entry.pack(fill="x", padx=48, pady=6)
+
+        actions = ctk.CTkFrame(self.login_frame, fg_color="transparent")
+        actions.pack(pady=14)
+        ctk.CTkButton(actions, text="Iniciar sesión", width=150, command=self.handle_login).pack(
+            side="left", padx=8
+        )
+        ctk.CTkButton(
+            actions,
+            text="Registrar",
+            width=150,
+            fg_color="#3B8ED0",
+            hover_color="#2E6EA5",
+            command=self.handle_register,
+        ).pack(side="left", padx=8)
+
+        self.status_label = ctk.CTkLabel(self.login_frame, text="", text_color="gray")
+        self.status_label.pack(pady=(8, 18))
+
+        ctk.CTkLabel(
+            self.login_frame,
+            text="Usuario demo: lider / 123456",
+            text_color="#888",
+        ).pack(pady=(0, 10))
+
+    # ---- Dashboard ----
+    def render_dashboard(self) -> None:
+        if self.login_frame:
+            self.login_frame.destroy()
+        if self.dashboard:
+            self.dashboard.destroy()
+
+        self.dashboard = ctk.CTkFrame(self.content, corner_radius=12)
+        self.dashboard.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.dashboard.rowconfigure(1, weight=1)
+        self.dashboard.columnconfigure(0, weight=1)
+
+        header = ctk.CTkLabel(
+            self.dashboard,
+            text=f"Panel de seguridad · {self.current_user.username}",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            anchor="w",
+        )
+        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+
+        self.tabs = ctk.CTkTabview(self.dashboard)
+        self.tabs.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+
+        self._build_keys_tab()
+        self._build_password_tab()
+        self._build_files_tab()
+
+    def _build_keys_tab(self) -> None:
+        tab = self.tabs.add("Llaves RSA")
+        tab.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            tab,
+            text="Genera y almacena tu llave pública/privada. Lista para guardarse en DB.",
+            wraplength=520,
+            justify="left",
+        ).pack(pady=(18, 10), padx=18)
+
+        self.keys_box = ctk.CTkTextbox(tab, height=200)
+        self.keys_box.insert("1.0", "Presiona el botón para generar tu par RSA.")
+        self.keys_box.configure(state="disabled")
+        self.keys_box.pack(fill="x", padx=18, pady=12)
+
+        ctk.CTkButton(tab, text="Generar par RSA", command=self.handle_generate_keys).pack(pady=8)
+
+        existing = get_keys_for_user(self.current_user) if self.current_user else None
+        if existing:
+            self._render_keys(existing)
+
+    def _render_keys(self, keypair: KeyPair) -> None:
+        self.keys_box.configure(state="normal")
+        self.keys_box.delete("1.0", "end")
+        self.keys_box.insert(
+            "1.0",
+            f"Llave pública:\n{keypair.public_key}\n\n"
+            f"Llave privada (mantener en secreto):\n{keypair.private_key}",
+        )
+        self.keys_box.configure(state="disabled")
+
+    def _build_password_tab(self) -> None:
+        tab = self.tabs.add("Contraseña")
+        tab.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(tab, text="Actualiza tu contraseña", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=18, pady=(18, 10)
+        )
+
+        ctk.CTkLabel(tab, text="Contraseña actual").grid(row=1, column=0, sticky="w", padx=18, pady=6)
+        self.old_pass_entry = ctk.CTkEntry(tab, show="*")
+        self.old_pass_entry.grid(row=1, column=1, sticky="ew", padx=18, pady=6)
+
+        ctk.CTkLabel(tab, text="Nueva contraseña").grid(row=2, column=0, sticky="w", padx=18, pady=6)
+        self.new_pass_entry = ctk.CTkEntry(tab, show="*")
+        self.new_pass_entry.grid(row=2, column=1, sticky="ew", padx=18, pady=6)
+
+        ctk.CTkButton(tab, text="Guardar", command=self.handle_change_password).grid(
+            row=3, column=1, sticky="e", padx=18, pady=12
+        )
+
+        self.pass_status = ctk.CTkLabel(tab, text="", text_color="gray")
+        self.pass_status.grid(row=4, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 16))
+
+    def _build_files_tab(self) -> None:
+        tab = self.tabs.add("Archivos de código")
+        tab.rowconfigure(1, weight=1)
+        tab.columnconfigure(0, weight=1)
+
+        upload = ctk.CTkFrame(tab)
+        upload.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+        upload.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(upload, text="Nombre del archivo").grid(row=0, column=0, sticky="w", pady=6)
+        self.file_name_entry = ctk.CTkEntry(upload, placeholder_text="api.py / modulo_aes.py ...")
+        self.file_name_entry.grid(row=0, column=1, sticky="ew", padx=10, pady=6)
+
+        ctk.CTkLabel(upload, text="Contenido (simulado cifrado)").grid(row=1, column=0, sticky="nw", pady=6)
+        self.file_content_box = ctk.CTkTextbox(upload, height=140)
+        self.file_content_box.grid(row=1, column=1, sticky="ew", padx=10, pady=6)
+
+        ctk.CTkButton(upload, text="Subir archivo", command=self.handle_upload_file).grid(
+            row=2, column=1, sticky="e", padx=10, pady=8
+        )
+
+        list_frame = ctk.CTkFrame(tab)
+        list_frame.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        list_frame.rowconfigure(0, weight=1)
+        list_frame.columnconfigure(0, weight=1)
+
+        self.files_scroll = ctk.CTkScrollableFrame(list_frame, height=200)
+        self.files_scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=8)
+
+        self.download_box = ctk.CTkTextbox(list_frame, height=160)
+        self.download_box.insert("1.0", "Selecciona un archivo para simular la descarga.")
+        self.download_box.configure(state="disabled")
+        self.download_box.grid(row=1, column=0, sticky="ew", pady=(4, 8))
+
+        self.refresh_files()
+
+    # ---- Event handlers ----
+    def handle_login(self) -> None:
         username = self.username_entry.get()
         password = self.password_entry.get()
-        
-        success, message = iniciar_sesion(username, password)
-        
-        if success:
-            messagebox.showinfo("Autorización Exitosa", message)
-            self.clear_fields()
+
+        ok, message, user = authenticate(username, password)
+        if ok and user:
+            self.current_user = user
+            self.status_label.configure(text=message, text_color="green")
+            self.render_dashboard()
         else:
-            messagebox.showerror("Autorización Fallida", message)
-    
-    def handle_register(self):
-        """Maneja el evento de registro de usuario."""
+            self.status_label.configure(text=message, text_color="red")
+            messagebox.showerror("Acceso denegado", message)
+
+    def handle_register(self) -> None:
         username = self.username_entry.get()
         password = self.password_entry.get()
-        
-        success, message = registrar_usuario(username, password)
-        
-        if success:
-            messagebox.showinfo("Registro Exitoso", message)
-            self.clear_fields()
-        else:
-            messagebox.showerror("Fallo de Registro", message)
 
-    def clear_fields(self):
-        """Limpia los campos de entrada."""
-        self.username_entry.delete(0, 'end')
-        self.password_entry.delete(0, 'end')
+        ok, message, user = create_user(username, password)
+        color = "green" if ok else "red"
+        self.status_label.configure(text=message, text_color=color)
+
+        if ok:
+            messagebox.showinfo("Registro exitoso", message)
+            self.username_entry.delete(0, "end")
+            self.password_entry.delete(0, "end")
+        else:
+            messagebox.showerror("No se pudo registrar", message)
+
+    def handle_generate_keys(self) -> None:
+        if not self.current_user:
+            return
+        keypair = generate_and_store_keys(self.current_user)
+        self._render_keys(keypair)
+        messagebox.showinfo(
+            "Llaves creadas",
+            "Par RSA generado. Listo para guardarse en la tabla 'llaves' cuando exista la DB.",
+        )
+
+    def handle_change_password(self) -> None:
+        if not self.current_user:
+            return
+        old = self.old_pass_entry.get()
+        new = self.new_pass_entry.get()
+
+        ok, msg = update_password(self.current_user, old, new)
+        color = "green" if ok else "red"
+        self.pass_status.configure(text=msg, text_color=color)
+
+        if ok:
+            self.old_pass_entry.delete(0, "end")
+            self.new_pass_entry.delete(0, "end")
+            messagebox.showinfo("Contraseña actualizada", msg)
+        else:
+            messagebox.showerror("No se pudo actualizar", msg)
+
+    def handle_upload_file(self) -> None:
+        if not self.current_user:
+            return
+        filename = self.file_name_entry.get()
+        content = self.file_content_box.get("1.0", "end").strip()
+
+        if not content:
+            messagebox.showwarning("Contenido vacío", "Agrega el código a almacenar.")
+            return
+
+        stored = store_code_file(self.current_user, filename, content)
+        self.file_name_entry.delete(0, "end")
+        self.file_content_box.delete("1.0", "end")
+        self.refresh_files()
+        messagebox.showinfo(
+            "Archivo guardado",
+            f"'{stored.filename}' quedó listo para INSERT en la tabla 'archivos'.",
+        )
+
+    def handle_download(self, file_id: int) -> None:
+        codefile = get_code_file(file_id)
+        if not codefile:
+            return
+        self.download_box.configure(state="normal")
+        self.download_box.delete("1.0", "end")
+        self.download_box.insert(
+            "1.0",
+            f"Archivo: {codefile.filename}\n"
+            f"Propietario (user_id): {codefile.owner_id}\n\n"
+            f"Contenido descifrado:\n{codefile.content}",
+        )
+        self.download_box.configure(state="disabled")
+
+    def refresh_files(self) -> None:
+        if not hasattr(self, "files_scroll"):
+            return
+        for widget in self.files_scroll.winfo_children():
+            widget.destroy()
+
+        for codefile in list_code_files():
+            row = ctk.CTkFrame(self.files_scroll)
+            row.pack(fill="x", padx=4, pady=4)
+            ctk.CTkLabel(row, text=f"#{codefile.id} · {codefile.filename}").pack(
+                side="left", padx=6, pady=6
+            )
+            ctk.CTkButton(
+                row,
+                text="Descargar",
+                width=100,
+                command=lambda fid=codefile.id: self.handle_download(fid),
+            ).pack(side="right", padx=6, pady=6)
 
 
 if __name__ == "__main__":
-    app = AuthApp()
+    app = SecureApp()
     app.mainloop()
