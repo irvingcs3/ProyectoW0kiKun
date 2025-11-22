@@ -45,7 +45,7 @@ def registrar_usuario(nombre_usuario: str, password: str):
     return True, f"Usuario '{nombre_usuario}' registrado con ID: {nuevo_usuario.id}"
 
 
-def iniciar_sesion(nombre_usuario: str, password: str) -> Tuple[bool, str, Optional[Usuario]]:
+def iniciar_sesion(nombre_usuario: str, password: str) -> (bool, str, Usuario | None):
     """Verifica la contraseña comparando hashes (Autenticación real)."""
     usuario = next((u for u in USUARIOS_REGISTRADOS if u.nombre_usuario == nombre_usuario), None)
 
@@ -64,7 +64,7 @@ def iniciar_sesion(nombre_usuario: str, password: str) -> Tuple[bool, str, Optio
 class AuthApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.current_user: Optional[Usuario] = None
+        self.current_user: Usuario | None = None
 
         # Configuración de la Ventana
         self.title("🛡️ Proyecto Criptográfico - Login Seguro")
