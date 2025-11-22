@@ -10,10 +10,8 @@ Al migrar a una base de datos real, basta con reemplazar las funciones en
 ``storage.py`` por consultas SQL o llamadas ORM en los puntos marcados con TODO.
 """
 from typing import Optional
-
 import customtkinter as ctk
 from tkinter import messagebox
-
 from models import CodeFile, KeyPair, User
 from storage import (
     authenticate,
@@ -40,7 +38,6 @@ class SecureApp(ctk.CTk):
         self.geometry("1080x640")
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
-
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=2)
@@ -180,29 +177,23 @@ class SecureApp(ctk.CTk):
         self._build_keys_tab()
         self._build_password_tab()
         self._build_files_tab()
-
     def _build_keys_tab(self) -> None:
         tab = self.tabs.add("Llaves RSA")
         tab.columnconfigure(0, weight=1)
-
         ctk.CTkLabel(
             tab,
             text="Genera y almacena tu llave pública/privada. Lista para guardarse en DB.",
             wraplength=520,
             justify="left",
         ).pack(pady=(18, 10), padx=18)
-
         self.keys_box = ctk.CTkTextbox(tab, height=200)
         self.keys_box.insert("1.0", "Presiona el botón para generar tu par RSA.")
         self.keys_box.configure(state="disabled")
         self.keys_box.pack(fill="x", padx=18, pady=12)
-
         ctk.CTkButton(tab, text="Generar par RSA", command=self.handle_generate_keys).pack(pady=8)
-
         existing = get_keys_for_user(self.current_user) if self.current_user else None
         if existing:
             self._render_keys(existing)
-
     def _render_keys(self, keypair: KeyPair) -> None:
         self.keys_box.configure(state="normal")
         self.keys_box.delete("1.0", "end")
@@ -276,7 +267,6 @@ class SecureApp(ctk.CTk):
     def handle_login(self) -> None:
         username = self.username_entry.get()
         password = self.password_entry.get()
-
         ok, message, user = authenticate(username, password)
         if ok and user:
             self.current_user = user
@@ -289,7 +279,6 @@ class SecureApp(ctk.CTk):
     def handle_register(self) -> None:
         username = self.username_entry.get()
         password = self.password_entry.get()
-
         ok, message, user = create_user(username, password)
         color = "green" if ok else "red"
         self.status_label.configure(text=message, text_color=color)
@@ -366,7 +355,6 @@ class SecureApp(ctk.CTk):
             return
         for widget in self.files_scroll.winfo_children():
             widget.destroy()
-
         for codefile in list_code_files():
             row = ctk.CTkFrame(self.files_scroll)
             row.pack(fill="x", padx=4, pady=4)
