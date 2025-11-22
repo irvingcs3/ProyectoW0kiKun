@@ -17,11 +17,8 @@ from storage import (
     authenticate,
     create_user,
     generate_and_store_keys,
-    get_code_file,
     get_keys_for_user,
-    list_code_files,
     seed_demo_user,
-    store_code_file,
     update_password,
 )
 
@@ -114,11 +111,6 @@ class SecureApp(ctk.CTk):
             text="Acceso Seguro",
             font=ctk.CTkFont(size=26, weight="bold"),
         ).pack(pady=(22, 6))
-        ctk.CTkLabel(
-            self.login_frame,
-            text="Demo con hash + sal (SHA-256) y almacenamiento en memoria.",
-            text_color="gray",
-        ).pack(pady=(0, 14))
 
         ctk.CTkLabel(self.login_frame, text="Usuario").pack(pady=(6, 0))
         self.username_entry = ctk.CTkEntry(self.login_frame, placeholder_text="ej: lider")
@@ -144,12 +136,6 @@ class SecureApp(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(self.login_frame, text="", text_color="gray")
         self.status_label.pack(pady=(8, 18))
-
-        ctk.CTkLabel(
-            self.login_frame,
-            text="Usuario demo: lider / 123456",
-            text_color="#888",
-        ).pack(pady=(0, 10))
 
     # ---- Dashboard ----
     def render_dashboard(self) -> None:
@@ -229,39 +215,18 @@ class SecureApp(ctk.CTk):
 
     def _build_files_tab(self) -> None:
         tab = self.tabs.add("Archivos de código")
-        tab.rowconfigure(1, weight=1)
         tab.columnconfigure(0, weight=1)
 
-        upload = ctk.CTkFrame(tab)
-        upload.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
-        upload.columnconfigure(1, weight=1)
+        buttons = ctk.CTkFrame(tab)
+        buttons.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
+        buttons.columnconfigure((0, 1), weight=1)
 
-        ctk.CTkLabel(upload, text="Nombre del archivo").grid(row=0, column=0, sticky="w", pady=6)
-        self.file_name_entry = ctk.CTkEntry(upload, placeholder_text="api.py / modulo_aes.py ...")
-        self.file_name_entry.grid(row=0, column=1, sticky="ew", padx=10, pady=6)
-
-        ctk.CTkLabel(upload, text="Contenido (simulado cifrado)").grid(row=1, column=0, sticky="nw", pady=6)
-        self.file_content_box = ctk.CTkTextbox(upload, height=140)
-        self.file_content_box.grid(row=1, column=1, sticky="ew", padx=10, pady=6)
-
-        ctk.CTkButton(upload, text="Subir archivo", command=self.handle_upload_file).grid(
-            row=2, column=1, sticky="e", padx=10, pady=8
-        )
-
-        list_frame = ctk.CTkFrame(tab)
-        list_frame.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
-        list_frame.rowconfigure(0, weight=1)
-        list_frame.columnconfigure(0, weight=1)
-
-        self.files_scroll = ctk.CTkScrollableFrame(list_frame, height=200)
-        self.files_scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=8)
-
-        self.download_box = ctk.CTkTextbox(list_frame, height=160)
-        self.download_box.insert("1.0", "Selecciona un archivo para simular la descarga.")
-        self.download_box.configure(state="disabled")
-        self.download_box.grid(row=1, column=0, sticky="ew", pady=(4, 8))
-
-        self.refresh_files()
+        ctk.CTkButton(
+            buttons, text="Obtener código", height=60, command=self.show_pending_feature
+        ).grid(row=0, column=0, padx=10, pady=10, sticky="ew")
+        ctk.CTkButton(
+            buttons, text="Subir código", height=60, command=self.show_pending_feature
+        ).grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
     # ---- Event handlers ----
     def handle_login(self) -> None:
@@ -318,55 +283,16 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("No se pudo actualizar", msg)
 
     def handle_upload_file(self) -> None:
-        if not self.current_user:
-            return
-        filename = self.file_name_entry.get()
-        content = self.file_content_box.get("1.0", "end").strip()
-
-        if not content:
-            messagebox.showwarning("Contenido vacío", "Agrega el código a almacenar.")
-            return
-
-        stored = store_code_file(self.current_user, filename, content)
-        self.file_name_entry.delete(0, "end")
-        self.file_content_box.delete("1.0", "end")
-        self.refresh_files()
-        messagebox.showinfo(
-            "Archivo guardado",
-            f"'{stored.filename}' quedó listo para INSERT en la tabla 'archivos'.",
-        )
+        self.show_pending_feature()
 
     def handle_download(self, file_id: int) -> None:
-        codefile = get_code_file(file_id)
-        if not codefile:
-            return
-        self.download_box.configure(state="normal")
-        self.download_box.delete("1.0", "end")
-        self.download_box.insert(
-            "1.0",
-            f"Archivo: {codefile.filename}\n"
-            f"Propietario (user_id): {codefile.owner_id}\n\n"
-            f"Contenido descifrado:\n{codefile.content}",
-        )
-        self.download_box.configure(state="disabled")
+        self.show_pending_feature()
 
     def refresh_files(self) -> None:
-        if not hasattr(self, "files_scroll"):
-            return
-        for widget in self.files_scroll.winfo_children():
-            widget.destroy()
-        for codefile in list_code_files():
-            row = ctk.CTkFrame(self.files_scroll)
-            row.pack(fill="x", padx=4, pady=4)
-            ctk.CTkLabel(row, text=f"#{codefile.id} · {codefile.filename}").pack(
-                side="left", padx=6, pady=6
-            )
-            ctk.CTkButton(
-                row,
-                text="Descargar",
-                width=100,
-                command=lambda fid=codefile.id: self.handle_download(fid),
-            ).pack(side="right", padx=6, pady=6)
+        return
+
+    def show_pending_feature(self) -> None:
+        messagebox.showinfo("Próximamente", "Esta acción se habilitará más adelante.")
 
 
 if __name__ == "__main__":
