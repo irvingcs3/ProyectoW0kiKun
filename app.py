@@ -1,4 +1,6 @@
 # app.py
+from typing import Optional, Tuple
+
 import customtkinter as ctk
 from tkinter import messagebox
 
