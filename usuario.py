@@ -1,9 +1,4 @@
-from dataclasses import dataclass
+"""Alias para mantener compatibilidad con la clase de usuario principal."""
+from auth_utils import Usuario
 
-@dataclass
-class Usuario:
-    id: int
-    nombre_usuario: str
-    password_hash: str 
-    salt: str         
-    esta_activo: bool = True
+__all__ = ["Usuario"]
