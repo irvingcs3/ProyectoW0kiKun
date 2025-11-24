@@ -41,6 +41,10 @@ def find_user_by_username(username: str) -> Optional[User]:
     return next((u for u in _DATABASE["usuarios"] if u.username == username), None)
 
 
+def list_users() -> List[User]:
+    return list(_DATABASE["usuarios"])
+
+
 def authenticate(username: str, password: str) -> Tuple[bool, str, Optional[User]]:
     user = find_user_by_username(username)
     if not user:
@@ -69,6 +73,10 @@ def get_keys_for_user(user: User) -> Optional[KeyPair]:
     return _DATABASE["llaves"].get(user.id)
 
 
+def user_has_keys(user: User) -> bool:
+    return user.id in _DATABASE["llaves"]
+
+
 def store_code_file(user: User, filename: str, content: str) -> CodeFile:
     file_id = _DATABASE["next_file_id"]
     _DATABASE["next_file_id"] += 1
@@ -93,4 +101,10 @@ def seed_demo_user() -> User:
         return existing
     created, _, user = create_user("lider", "123456")
     assert created and user is not None
+    for username in ("analista", "auditor", "invitado"):
+        if not find_user_by_username(username):
+            created, _, temp_user = create_user(username, "123456")
+            assert created and temp_user is not None
+            if username == "analista":
+                generate_and_store_keys(temp_user)
     return user
