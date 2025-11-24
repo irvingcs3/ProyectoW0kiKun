@@ -8,7 +8,11 @@ import hashlib
 import os
 import secrets
 from typing import Optional, Tuple
+from rsa_utils import generar_par_claves_rsa
+from hash_utils import hash_archivo
 
+def generate_rsa_keypair():
+    return generar_par_claves_rsa()
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     """Genera un hash SHA-256 con sal.
@@ -32,8 +36,8 @@ def verify_password(password: str, stored_hash: str, salt: str) -> bool:
     return secrets.compare_digest(candidate_hash, stored_hash)
 
 
-def generate_rsa_keypair() -> Tuple[str, str]:
-    """Genera un par de llaves RSA simuladas (2048 bits) para la demo."""
-    private_key = f"RSA-PRIVATE-{secrets.token_hex(32)}"
-    public_key = f"RSA-PUBLIC-{secrets.token_hex(32)}"
-    return public_key, private_key
+# def generate_rsa_keypair() -> Tuple[str, str]:
+#     """Genera un par de llaves RSA simuladas (2048 bits) para la demo."""
+#     private_key = f"RSA-PRIVATE-{secrets.token_hex(32)}"
+#     public_key = f"RSA-PUBLIC-{secrets.token_hex(32)}"
+#     return public_key, private_key

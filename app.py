@@ -21,7 +21,11 @@ from storage import (
     seed_demo_user,
     update_password,
 )
-
+from aes_hybrid import cifrar_archivo_hibrido, descifrar_archivo_hibrido
+from rsa_utils import firmar_archivo, verificar_firma
+from hash_utils import hash_archivo
+from storage import store_code_file, get_keys_for_user
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 class SecureApp(ctk.CTk):
     def __init__(self) -> None:
@@ -222,10 +226,10 @@ class SecureApp(ctk.CTk):
         buttons.columnconfigure((0, 1), weight=1)
 
         ctk.CTkButton(
-            buttons, text="Obtener código", height=60, command=self.show_pending_feature
+            buttons, text="Obtener código", height=60, command=self.handle_download
         ).grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         ctk.CTkButton(
-            buttons, text="Subir código", height=60, command=self.show_pending_feature
+            buttons, text="Subir código", height=60, command=self.handle_upload_file
         ).grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
     # ---- Event handlers ----
@@ -285,14 +289,54 @@ class SecureApp(ctk.CTk):
     def handle_upload_file(self) -> None:
         self.show_pending_feature()
 
-    def handle_download(self, file_id: int) -> None:
-        self.show_pending_feature()
+    # def handle_download(self, file_id: int) -> None:
+    #     self.show_pending_feature()
 
     def refresh_files(self) -> None:
         return
 
     def show_pending_feature(self) -> None:
         messagebox.showinfo("Próximamente", "Esta acción se habilitará más adelante.")
+
+    def handle_upload_file(self):
+        if not self.current_user:
+            return
+
+        path = askopenfilename(title="Selecciona archivo de código")
+        if not path:
+            return
+
+        keys = get_keys_for_user(self.current_user)
+        if not keys:
+            messagebox.showerror("Error", "Primero genera tus llaves RSA.")
+            return
+
+        enc_path = cifrar_archivo_hibrido(path, keys.public_key)
+        hash_archivo(path)
+        sig_path = firmar_archivo(path, keys.private_key)
+
+        with open(enc_path, "rb") as f:
+            encrypted_content = f.read().hex()
+
+        store_code_file(self.current_user, path, encrypted_content)
+
+        messagebox.showinfo("Cifrado exitoso", f"Archivo cifrado: {enc_path}")
+
+
+    def handle_download(self):
+        keys = get_keys_for_user(self.current_user)
+        if not keys:
+            messagebox.showerror("Error", "No tienes llaves RSA generadas.")
+            return
+
+        path = askopenfilename(title="Selecciona archivo cifrado .enc")
+        if not path:
+            return
+
+        dec_path = descifrar_archivo_hibrido(path, keys.private_key)
+        messagebox.showinfo("Descifrado completo", f"Archivo descifrado: {dec_path}")
+
+
 
 
 if __name__ == "__main__":

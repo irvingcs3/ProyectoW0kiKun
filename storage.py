@@ -4,9 +4,15 @@ Cada función incluye comentarios sobre el punto exacto donde se haría la
 inserción o consulta SQL cuando se sustituya por una base real.
 """
 from typing import Dict, List, Optional, Tuple
-
+from rsa_utils import generar_par_claves_rsa
 from crypto_utils import generate_rsa_keypair, hash_password, verify_password
 from models import CodeFile, KeyPair, User
+
+def generate_and_store_keys(user: User) -> KeyPair:
+    public_key, private_key = generar_par_claves_rsa()  # ahora usa RSA real
+    keypair = KeyPair(user_id=user.id, public_key=public_key, private_key=private_key)
+    _DATABASE["llaves"][user.id] = keypair
+    return keypair
 
 # --- Estructuras simuladas (sustituibles por una DB real) ---
 _DATABASE: Dict[str, object] = {
@@ -75,14 +81,14 @@ def update_password(user: User, old_password: str, new_password: str) -> Tuple[b
     return True, "Contraseña actualizada correctamente."
 
 
-# --- Operaciones sobre llaves RSA ---
-def generate_and_store_keys(user: User) -> KeyPair:
-    """Genera y guarda el par de llaves para el usuario."""
-    public_key, private_key = generate_rsa_keypair()
-    keypair = KeyPair(user_id=user.id, public_key=public_key, private_key=private_key)
-    _DATABASE["llaves"][user.id] = keypair
-    # TODO: INSERT INTO llaves(usuario_id, public_key, private_key)
-    return keypair
+# # --- Operaciones sobre llaves RSA ---
+# def generate_and_store_keys(user: User) -> KeyPair:
+#     """Genera y guarda el par de llaves para el usuario."""
+#     public_key, private_key = generate_rsa_keypair()
+#     keypair = KeyPair(user_id=user.id, public_key=public_key, private_key=private_key)
+#     _DATABASE["llaves"][user.id] = keypair
+#     # TODO: INSERT INTO llaves(usuario_id, public_key, private_key)
+#     return keypair
 
 
 def get_keys_for_user(user: User) -> Optional[KeyPair]:
