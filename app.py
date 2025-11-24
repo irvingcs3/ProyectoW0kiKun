@@ -280,11 +280,22 @@ class SecureApp(ctk.CTk):
     def handle_generate_keys(self) -> None:
         if not self.current_user:
             return
+        if user_has_keys(self.current_user) and self.current_user.username not in {
+            "lider",
+            "admin",
+        }:
+            message = (
+                "Ya generaste tus llaves RSA. No es posible volver a generarlas. "
+                "Contacta a un administrador."
+            )
+            self.keys_status_label.configure(text=message, text_color="#D93F3F")
+            messagebox.showerror("Acción no permitida", message)
+            return
         keypair = generate_and_store_keys(self.current_user)
         self._render_keys(keypair)
         self.keys_status_label.configure(
-            text="Llave pública almacenada en la base de datos "
-        )
+        text="Llave pública almacenada en la base de datos",
+            text_color="#2FA572",        )
         self._save_keys_to_file(keypair)
         if getattr(self, "admin_tab", None):
             self._refresh_admin_users()
