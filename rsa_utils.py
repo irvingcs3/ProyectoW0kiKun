@@ -4,7 +4,6 @@ from cryptography.hazmat.primitives import serialization, hashes
 import base64
 from pathlib import Path
 
-# Generar par de llaves RSA
 def generar_par_claves_rsa() -> tuple[str, str]:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()
@@ -23,7 +22,6 @@ def generar_par_claves_rsa() -> tuple[str, str]:
     return public_pem, private_pem
 
 
-# Cargar llaves desde texto PEM
 def load_private_key_from_pem(pem_text: str):
     return serialization.load_pem_private_key(pem_text.encode("utf-8"), password=None)
 
@@ -32,7 +30,6 @@ def load_public_key_from_pem(pem_text: str):
     return serialization.load_pem_public_key(pem_text.encode("utf-8"))
 
 
-# Firmar archivo 
 def firmar_archivo(path: str, private_pem: str) -> str:
 
     private_key = load_private_key_from_pem(private_pem)
@@ -58,7 +55,6 @@ def firmar_archivo(path: str, private_pem: str) -> str:
     return sig_path
 
 
-# Verificar firma
 def verificar_firma(path: str, sig_path: str, public_pem: str) -> bool:
 
     public_key = load_public_key_from_pem(public_pem)

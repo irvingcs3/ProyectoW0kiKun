@@ -1,14 +1,4 @@
-"""Aplicación de escritorio demo para los servicios criptográficos solicitados.
 
-Características principales:
-- Inicio de sesión seguro con hash + sal (SHA-256) y base de datos simulada.
-- Generación de llaves públicas y privadas por usuario (lista para persistir en DB).
-- Cambio de contraseña validando la anterior.
-- Carga y descarga de archivos de código (simulando cifrado con AES) asociados al usuario.
-
-Al migrar a una base de datos real, basta con reemplazar las funciones en
-``storage.py`` por consultas SQL o llamadas ORM en los puntos marcados con TODO.
-"""
 from typing import Optional
 import customtkinter as ctk
 from tkinter import messagebox
@@ -32,10 +22,9 @@ class SecureApp(ctk.CTk):
         super().__init__()
         self.current_user: Optional[User] = None
 
-        seed_demo_user()  # crea usuario "lider" / "123456" para probar
+        seed_demo_user()  
 
-        # Configuración general de la ventana
-        self.title("🛡️ Plataforma Criptográfica Demo")
+        self.title(" ChuchoCripOscar")
         self.geometry("1080x640")
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
@@ -57,7 +46,6 @@ class SecureApp(ctk.CTk):
 
         self.render_login()
 
-    # ---- Panel lateral de contexto ----
     def _build_info_panel(self) -> ctk.CTkFrame:
         panel = ctk.CTkFrame(self, corner_radius=0)
         panel.rowconfigure(3, weight=1)
@@ -99,7 +87,6 @@ class SecureApp(ctk.CTk):
         algo_box.pack(fill="both", expand=True, padx=18, pady=(4, 18))
         return panel
 
-    # ---- Pantalla de login/registro ----
     def render_login(self) -> None:
         if self.dashboard:
             self.dashboard.destroy()
@@ -141,7 +128,6 @@ class SecureApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(self.login_frame, text="", text_color="gray")
         self.status_label.pack(pady=(8, 18))
 
-    # ---- Dashboard ----
     def render_dashboard(self) -> None:
         if self.login_frame:
             self.login_frame.destroy()
@@ -266,7 +252,6 @@ class SecureApp(ctk.CTk):
         self._render_keys(keypair)
         messagebox.showinfo(
             "Llaves creadas",
-            "Par RSA generado. Listo para guardarse en la tabla 'llaves' cuando exista la DB.",
         )
 
     def handle_change_password(self) -> None:
@@ -289,14 +274,12 @@ class SecureApp(ctk.CTk):
     def handle_upload_file(self) -> None:
         self.show_pending_feature()
 
-    # def handle_download(self, file_id: int) -> None:
-    #     self.show_pending_feature()
 
     def refresh_files(self) -> None:
         return
 
     def show_pending_feature(self) -> None:
-        messagebox.showinfo("Próximamente", "Esta acción se habilitará más adelante.")
+        messagebox.showinfo("Próximamente")
 
     def handle_upload_file(self):
         if not self.current_user:
