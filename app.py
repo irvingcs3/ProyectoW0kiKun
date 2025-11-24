@@ -139,7 +139,7 @@ class SecureApp(ctk.CTk):
         if existing:
             self._render_keys(existing)
             self.keys_status_label.configure(
-                text="Llave pública ya almacenada en la base de datos (simulada)."
+                text="Llave pública ya almacenada en la base de datos."
             )
     def _render_keys(self, keypair: KeyPair) -> None:
         self.keys_box.configure(state="normal")
@@ -283,7 +283,7 @@ class SecureApp(ctk.CTk):
         keypair = generate_and_store_keys(self.current_user)
         self._render_keys(keypair)
         self.keys_status_label.configure(
-            text="Llave pública almacenada en la base de datos (simulada)."
+            text="Llave pública almacenada en la base de datos "
         )
         self._save_keys_to_file(keypair)
         if getattr(self, "admin_tab", None):
