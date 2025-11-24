@@ -8,8 +8,10 @@ from storage import (
     create_user,
     generate_and_store_keys,
     get_keys_for_user,
+    list_users,
     seed_demo_user,
     update_password,
+    user_has_keys,
 )
 from aes_hybrid import cifrar_archivo_hibrido, descifrar_archivo_hibrido
 from rsa_utils import firmar_archivo, verificar_firma
@@ -39,6 +41,7 @@ class SecureApp(ctk.CTk):
         self.login_frame: Optional[ctk.CTkFrame] = None
         self.dashboard: Optional[ctk.CTkFrame] = None
         self.tabs: Optional[ctk.CTkTabview] = None
+        self.admin_tab: Optional[ctk.CTkFrame] = None
 
         self.render_login()
 
@@ -104,10 +107,13 @@ class SecureApp(ctk.CTk):
 
         self.tabs = ctk.CTkTabview(self.dashboard)
         self.tabs.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        self.admin_tab = None
 
         self._build_keys_tab()
         self._build_password_tab()
         self._build_files_tab()
+        if self.current_user and self.current_user.username == "lider":
+            self._build_admin_tab()
     def _build_keys_tab(self) -> None:
         tab = self.tabs.add("Llaves RSA")
         tab.columnconfigure(0, weight=1)
@@ -122,9 +128,19 @@ class SecureApp(ctk.CTk):
         self.keys_box.configure(state="disabled")
         self.keys_box.pack(fill="x", padx=18, pady=12)
         ctk.CTkButton(tab, text="Generar par RSA", command=self.handle_generate_keys).pack(pady=8)
+        self.keys_status_label = ctk.CTkLabel(
+            tab,
+            text="",
+            text_color="#2FA572",
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self.keys_status_label.pack(pady=(0, 12))
         existing = get_keys_for_user(self.current_user) if self.current_user else None
         if existing:
             self._render_keys(existing)
+            self.keys_status_label.configure(
+                text="Llave pública ya almacenada en la base de datos (simulada)."
+            )
     def _render_keys(self, keypair: KeyPair) -> None:
         self.keys_box.configure(state="normal")
         self.keys_box.delete("1.0", "end")
@@ -173,6 +189,67 @@ class SecureApp(ctk.CTk):
             buttons, text="Subir código", height=60, command=self.handle_upload_file
         ).grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
+    def _build_admin_tab(self) -> None:
+        self.admin_tab = self.tabs.add("Usuarios (líder)")
+        self.admin_tab.columnconfigure(0, weight=1)
+        header = ctk.CTkLabel(
+            self.admin_tab,
+            text="Panel de monitoreo de llaves",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        header.grid(row=0, column=0, sticky="w", padx=18, pady=(18, 6))
+        desc = ctk.CTkLabel(
+            self.admin_tab,
+            text=(
+                "Solo el usuario líder puede ver el estado de generación de llaves de todos los"
+                " usuarios registrados (datos locales simulados)."
+            ),
+            wraplength=520,
+            text_color="gray",
+            justify="left",
+        )
+        desc.grid(row=1, column=0, sticky="w", padx=18, pady=(0, 10))
+
+        self.users_list = ctk.CTkScrollableFrame(self.admin_tab, height=260)
+        self.users_list.grid(row=2, column=0, sticky="nsew", padx=18, pady=(4, 18))
+        self.admin_tab.rowconfigure(2, weight=1)
+        self._refresh_admin_users()
+
+    def _refresh_admin_users(self) -> None:
+        for widget in self.users_list.winfo_children():
+            widget.destroy()
+
+        for user in list_users():
+            self._render_user_card(user)
+
+    def _render_user_card(self, user: User) -> None:
+        has_keys = user_has_keys(user)
+        card = ctk.CTkFrame(self.users_list, corner_radius=12)
+        card.pack(fill="x", padx=4, pady=6)
+        left = ctk.CTkFrame(card, fg_color="transparent")
+        left.pack(side="left", padx=12, pady=10)
+        ctk.CTkLabel(
+            left, text=user.username, font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            left,
+            text=f"ID: {user.id} | Estado: {'activo' if user.active else 'inactivo'}",
+            text_color="gray",
+        ).pack(anchor="w")
+
+        status_color = "#25A18E" if has_keys else "#D93F3F"
+        status_text = "Llaves generadas" if has_keys else "Pendiente de generación"
+        badge = ctk.CTkLabel(
+            card,
+            text=status_text,
+            fg_color=status_color,
+            text_color="white",
+            corner_radius=10,
+            padx=12,
+            pady=6,
+        )
+        badge.pack(side="right", padx=12)
+
     # ---- Event handlers ----
     def handle_login(self) -> None:
         username = self.username_entry.get()
@@ -205,8 +282,36 @@ class SecureApp(ctk.CTk):
             return
         keypair = generate_and_store_keys(self.current_user)
         self._render_keys(keypair)
+        self.keys_status_label.configure(
+            text="Llave pública almacenada en la base de datos (simulada)."
+        )
+        self._save_keys_to_file(keypair)
+        if getattr(self, "admin_tab", None):
+            self._refresh_admin_users()
+
+    def _save_keys_to_file(self, keypair: KeyPair) -> None:
+        suggested = f"par_rsa_{self.current_user.username}.txt"
+        path = asksaveasfilename(
+            defaultextension=".txt",
+            initialfile=suggested,
+            title="Descargar par de llaves",
+        )
+        if not path:
+            messagebox.showinfo(
+                "Llaves generadas",
+                "Tu par RSA está listo y la llave pública quedó almacenada en la base de datos.",
+            )
+            return
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("Par de llaves RSA generado con ChuchoCripOscar\n")
+            f.write(f"Usuario: {self.current_user.username}\n\n")
+            f.write(f"Llave pública:\n{keypair.public_key}\n\n")
+            f.write(f"Llave privada (mantener en secreto):\n{keypair.private_key}\n")
+
         messagebox.showinfo(
-            "Llaves creadas",
+            "Descarga completada",
+            "El par se descargó correctamente y la llave pública fue almacenada en la base de datos.",
         )
 
     def handle_change_password(self) -> None:
