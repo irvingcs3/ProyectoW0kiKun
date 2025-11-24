@@ -30,13 +30,9 @@ class SecureApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=2)
-
-        self.info_panel = self._build_info_panel()
-        self.info_panel.grid(row=0, column=0, sticky="nsew")
 
         self.content = ctk.CTkFrame(self, fg_color="transparent")
-        self.content.grid(row=0, column=1, sticky="nsew", padx=18, pady=18)
+        self.content.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         self.content.rowconfigure(0, weight=1)
         self.content.columnconfigure(0, weight=1)
 
@@ -45,47 +41,6 @@ class SecureApp(ctk.CTk):
         self.tabs: Optional[ctk.CTkTabview] = None
 
         self.render_login()
-
-    def _build_info_panel(self) -> ctk.CTkFrame:
-        panel = ctk.CTkFrame(self, corner_radius=0)
-        panel.rowconfigure(3, weight=1)
-
-        ctk.CTkLabel(
-            panel,
-            text="Servicios Criptográficos",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            anchor="w",
-        ).pack(fill="x", padx=18, pady=(20, 8))
-
-        bullets = (
-            "Confidencialidad: cifrado simulado con AES para archivos almacenados.",
-            "Integridad: firmas digitales (hash + RSA) detectan cambios no autorizados.",
-            "Autenticación: contraseñas con hash + sal en lugar de texto plano.",
-            "Control de acceso: llaves RSA para líderes y senior devs.",
-        )
-        for text in bullets:
-            ctk.CTkLabel(panel, text=f"• {text}", wraplength=280, justify="left").pack(
-                fill="x", padx=18, pady=4
-            )
-
-        ctk.CTkLabel(
-            panel,
-            text="Algoritmos propuestos",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            anchor="w",
-        ).pack(fill="x", padx=18, pady=(16, 6))
-
-        algo_box = ctk.CTkTextbox(panel, height=180, wrap="word")
-        algo_box.insert(
-            "1.0",
-            "AES → Cifrar/descifrar archivos en reposo.\n"
-            "RSA → Autenticación y reparto de llaves.\n"
-            "Firma digital → Hash + RSA para integridad.\n\n"
-            "Nota: reemplaza este simulador por una base de datos real sin cambiar la UI.",
-        )
-        algo_box.configure(state="disabled")
-        algo_box.pack(fill="both", expand=True, padx=18, pady=(4, 18))
-        return panel
 
     def render_login(self) -> None:
         if self.dashboard:
