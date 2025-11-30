@@ -97,13 +97,19 @@ class SecureApp(ctk.CTk):
         self.dashboard.rowconfigure(1, weight=1)
         self.dashboard.columnconfigure(0, weight=1)
 
-        header = ctk.CTkLabel(
-            self.dashboard,
+        header = ctk.CTkFrame(self.dashboard, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+        header.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            header,
             text=f"Panel de seguridad · {self.current_user.username}",
             font=ctk.CTkFont(size=22, weight="bold"),
             anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(header, text="Cerrar sesión", command=self.handle_logout).grid(
+            row=0, column=1, padx=(10, 0)
         )
-        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
 
         self.tabs = ctk.CTkTabview(self.dashboard)
         self.tabs.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
@@ -389,6 +395,11 @@ class SecureApp(ctk.CTk):
 
         dec_path = descifrar_archivo_hibrido(path, keys.private_key)
         messagebox.showinfo("Descifrado completo", f"Archivo descifrado: {dec_path}")
+
+    def handle_logout(self) -> None:
+        self.current_user = None
+        self.render_login()
+        self.status_label.configure(text="Sesión cerrada correctamente", text_color="gray")
 
 
 
