@@ -16,7 +16,9 @@ from storagebd import (
     user_has_keys,
     get_projects_for_user,
     download_project_file,
-    store_project_file,  
+    # store_project_file,  <-- Ya no usamos la función legacy
+    obtener_proyectos_escritura,   # <--- NUEVA
+    subir_archivo_con_llave_local  # <--- NUEVA
 )
 
 # ---- CRYPTO MODULES ----
@@ -369,31 +371,50 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Error", msg)
 
     # ================================
-    # SUBIR ARCHIVO
+    # SUBIR ARCHIVO (Lógica Actualizada)
     # ================================
     def handle_upload_file(self):
         if not self.current_user:
             return
 
-        path = askopenfilename()
-        if not path:
+        # 1. Verificar si tiene proyectos con permiso de ESCRITURA
+        proyectos = obtener_proyectos_escritura(self.current_user.id)
+        if not proyectos:
+            messagebox.showerror("Acceso Denegado", "No tienes permisos de ESCRITURA en ningún proyecto.")
             return
 
-        keys = get_keys_for_user(self.current_user)
-        if not keys:
-            messagebox.showerror("Error", "Genera tus llaves RSA primero.")
-            return
+        # 2. Seleccionar el archivo de CÓDIGO (Source Code)
+        path_codigo = askopenfilename(title="1. Selecciona el código fuente a subir")
+        if not path_codigo: return
 
-        enc_path = cifrar_archivo_hibrido(path, keys.public_key)
-        hash_archivo(path)
-        firmar_archivo(path, keys.private_key)
+        # 3. Seleccionar la LLAVE PRIVADA (Local - .txt o .pem)
+        # Se asume que el usuario guardó sus llaves antes.
+        messagebox.showinfo("Seguridad Requerida", "Paso de seguridad: Selecciona tu archivo de Llaves RSA (el que descargaste) para firmar digitalmente esta subida.")
+        path_llave = askopenfilename(title="2. Selecciona tu archivo de Llaves (.txt/.pem)", filetypes=[("Llaves", "*.txt *.pem"), ("Todos", "*.*")])
+        if not path_llave: return
 
-        store_project_file(self.current_user, path, enc_path)
+        # 4. Seleccionar el PROYECTO DESTINO
+        nombres = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
+        idx = self.select_from_list("Selecciona Proyecto Destino", nombres)
+        if idx is None: return
+        
+        id_proyecto = proyectos[idx]['id_proyecto']
 
-        messagebox.showinfo("Éxito", f"Código cifrado y guardado.")
+        # 5. EJECUTAR SUBIDA SEGURA
+        ok, msg = subir_archivo_con_llave_local(
+            self.current_user.id, 
+            id_proyecto, 
+            path_codigo, 
+            path_llave
+        )
+
+        if ok:
+            messagebox.showinfo("Subida Exitosa", msg)
+        else:
+            messagebox.showerror("Error en Subida", msg)
 
     # ================================
-    # DESCARGAR ARCHIVO
+    # DESCARGAR ARCHIVO (Mantenemos lógica existente por ahora)
     # ================================
     def handle_download(self):
         if not self.current_user:
@@ -417,9 +438,14 @@ class SecureApp(ctk.CTk):
         proyecto = proyectos[idx]
         enc_path = proyecto["ubicacion_codigo_cifrado"]
 
-        dec_path = descifrar_archivo_hibrido(enc_path, keys.private_key)
-
-        messagebox.showinfo("Descifrado", f"Archivo listo en:\n{dec_path}")
+        # Nota: La descarga segura requeriría actualizar descifrar_archivo_hibrido
+        # para usar la clave maestra de la BD (si se usó el nuevo método de subida).
+        # Por ahora se mantiene la llamada existente.
+        try:
+            dec_path = descifrar_archivo_hibrido(enc_path, keys.private_key)
+            messagebox.showinfo("Descifrado", f"Archivo listo en:\n{dec_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo descifrar (posiblemente formato antiguo o clave incorrecta): {e}")
 
     # ================================
     # SELECCIÓN DE LISTA
@@ -428,6 +454,10 @@ class SecureApp(ctk.CTk):
         win = ctk.CTkToplevel(self)
         win.title(title)
         win.geometry("420x200")
+        
+        # Hacer la ventana modal
+        win.transient(self) 
+        win.grab_set()
 
         var = ctk.StringVar(value=items[0])
         combo = ctk.CTkComboBox(win, values=items, variable=var)
@@ -441,8 +471,7 @@ class SecureApp(ctk.CTk):
 
         ctk.CTkButton(win, text="Seleccionar", command=choose).pack(pady=10)
 
-        win.grab_set()
-        win.wait_window()
+        self.wait_window(win)
         return result["value"]
 
     def handle_logout(self):

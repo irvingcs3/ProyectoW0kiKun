@@ -13,7 +13,7 @@ def load_private_key(pem_text: str):
     return serialization.load_pem_private_key(pem_text.encode(), password=None)
 
 
-# CIFRAR 
+
 def cifrar_archivo_hibrido(path: str, public_key_pem: str) -> str:
     public_key = load_public_key(public_key_pem)
 
@@ -48,7 +48,6 @@ def cifrar_archivo_hibrido(path: str, public_key_pem: str) -> str:
     return enc_path
 
 
-# DESCIFRAR
 def descifrar_archivo_hibrido(enc_path: str, private_key_pem: str) -> str:
     private_key = load_private_key(private_key_pem)
 
@@ -76,3 +75,39 @@ def descifrar_archivo_hibrido(enc_path: str, private_key_pem: str) -> str:
         f.write(plaintext)
 
     return out_path
+
+
+
+def cifrar_con_aes_maestra(path_entrada: str, clave_aes_bytes: bytes) -> str:
+    """
+    Cifra un archivo usando una clave AES específica proveniente de la Base de Datos.
+    NO genera una clave nueva, usa la del Proyecto.
+    """
+    # 1. Asegurar formato de la clave
+    if isinstance(clave_aes_bytes, str):
+        clave_aes_bytes = clave_aes_bytes.encode()
+
+    # 2. Validar longitud de clave para AES-256 (Debe ser 32 bytes)
+    if len(clave_aes_bytes) != 32:
+        digest = hashes.Hash(hashes.SHA256())
+        digest.update(clave_aes_bytes)
+        clave_aes_bytes = digest.finalize()
+
+    # 3. Preparar cifrado
+    aesgcm = AESGCM(clave_aes_bytes)
+    nonce = os.urandom(12) 
+
+    # 4. Leer archivo original
+    with open(path_entrada, "rb") as f:
+        plaintext = f.read()
+
+    # 5. Cifrar
+    ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data=None)
+
+    # 6. Guardar archivo cifrado (.enc)
+    enc_path = path_entrada + ".enc"
+    with open(enc_path, "wb") as f:
+        f.write(nonce)
+        f.write(ciphertext)
+
+    return enc_path
