@@ -16,7 +16,7 @@ from storagebd import (
     user_has_keys,
     get_projects_for_user,
     download_project_file,
-    store_project_file,   # debes implementarla en storagebd
+    store_project_file,  
 )
 
 # ---- CRYPTO MODULES ----
@@ -31,15 +31,23 @@ class SecureApp(ctk.CTk):
         self.current_user: Optional[User] = None
 
         self.title("ChuchoCripOscar · Seguridad de Código")
-        self.geometry("1080x640")
         ctk.set_appearance_mode("System")
-        ctk.set_default_color_theme("blue")
+        ctk.set_default_color_theme("dark-blue")
+
+        self.primary_bg = "#0b1628"
+        self.surface_bg = "#12223e"
+        self.accent = "#4fd1c5"
+
+        self.configure(fg_color=self.primary_bg)
+        self.geometry("960x620")
+        self.resizable(False, False)
 
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
         self.content = ctk.CTkFrame(self, fg_color="transparent")
         self.content.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
+        self._center_window()
 
         self.login_frame = None
         self.dashboard = None
@@ -55,33 +63,75 @@ class SecureApp(ctk.CTk):
         if self.dashboard:
             self.dashboard.destroy()
 
-        self.login_frame = ctk.CTkFrame(self.content, corner_radius=12)
-        self.login_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        for i in range(3):
+            self.content.columnconfigure(i, weight=1)
+            self.content.rowconfigure(i, weight=1)
+
+        self.login_frame = ctk.CTkFrame(
+            self.content, corner_radius=16, fg_color=self.surface_bg, width=880, height=520
+        )
+        self.login_frame.grid(row=1, column=1, padx=10, pady=10)
+        self.login_frame.columnconfigure(0, weight=1)
+        self.login_frame.columnconfigure(1, weight=1)
+
+        hero = ctk.CTkFrame(self.login_frame, fg_color="transparent")
+        hero.grid(row=0, column=0, sticky="nsew", padx=26, pady=26)
+        hero.columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            self.login_frame,
-            text="Acceso Seguro",
-            font=ctk.CTkFont(size=26, weight="bold"),
-        ).pack(pady=(22, 6))
+            hero,
+            text="ChuchoCripOscar",
+            font=ctk.CTkFont(size=32, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(4, 2))
+        ctk.CTkLabel(
+            hero,
+            text="Control profesional de cifrado y manejo de código",
+            font=ctk.CTkFont(size=16),
+            text_color="#cfd8e3",
+            wraplength=420,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w")
 
-        # Usuario
-        ctk.CTkLabel(self.login_frame, text="Usuario").pack()
-        self.username_entry = ctk.CTkEntry(self.login_frame, placeholder_text="ej: lider")
-        self.username_entry.pack(fill="x", padx=48, pady=6)
+        form_wrapper = ctk.CTkFrame(self.login_frame, corner_radius=14, fg_color="#1b2f52")
+        form_wrapper.grid(row=0, column=1, sticky="nsew", padx=26, pady=26)
+        form_wrapper.columnconfigure(0, weight=1)
 
-        # Password
-        ctk.CTkLabel(self.login_frame, text="Contraseña").pack()
-        self.password_entry = ctk.CTkEntry(self.login_frame, placeholder_text="••••••", show="*")
-        self.password_entry.pack(fill="x", padx=48, pady=6)
+        ctk.CTkLabel(
+            form_wrapper,
+            text="Acceso",
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).grid(row=0, column=0, pady=(12, 6))
 
-        actions = ctk.CTkFrame(self.login_frame, fg_color="transparent")
-        actions.pack(pady=14)
+        ctk.CTkLabel(form_wrapper, text="Usuario", anchor="w").grid(row=1, column=0, sticky="ew", padx=18)
+        self.username_entry = ctk.CTkEntry(form_wrapper, placeholder_text="ej: lider")
+        self.username_entry.grid(row=2, column=0, sticky="ew", padx=18, pady=6)
 
-        ctk.CTkButton(actions, text="Iniciar sesión", command=self.handle_login).pack(side="left", padx=8)
+        ctk.CTkLabel(form_wrapper, text="Contraseña", anchor="w").grid(row=3, column=0, sticky="ew", padx=18)
+        self.password_entry = ctk.CTkEntry(form_wrapper, placeholder_text="••••••", show="*")
+        self.password_entry.grid(row=4, column=0, sticky="ew", padx=18, pady=6)
+
+        actions = ctk.CTkFrame(form_wrapper, fg_color="transparent")
+        actions.grid(row=5, column=0, pady=16)
+
+        ctk.CTkButton(
+            actions,
+            text="Iniciar sesión",
+            fg_color=self.accent,
+            hover_color="#38b2a6",
+            command=self.handle_login,
+        ).pack(side="left", padx=8)
         ctk.CTkButton(actions, text="Registrar", command=self.handle_register).pack(side="left", padx=8)
 
-        self.status_label = ctk.CTkLabel(self.login_frame, text="", text_color="gray")
-        self.status_label.pack(pady=6)
+        self.status_label = ctk.CTkLabel(form_wrapper, text="", text_color="#9fb3c8")
+        self.status_label.grid(row=6, column=0, pady=(4, 10))
+
+    def _center_window(self) -> None:
+        self.update_idletasks()
+        width = 960
+        height = 620
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     # ================================
     # DASHBOARD
@@ -90,11 +140,13 @@ class SecureApp(ctk.CTk):
         if self.login_frame:
             self.login_frame.destroy()
 
-        self.dashboard = ctk.CTkFrame(self.content, corner_radius=12)
-        self.dashboard.grid(row=0, column=0, sticky="nsew")
+        self.dashboard = ctk.CTkFrame(self.content, corner_radius=16, fg_color=self.surface_bg)
+        self.dashboard.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.dashboard.rowconfigure(1, weight=1)
+        self.dashboard.columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(self.dashboard, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(18, 10))
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 10))
         header.columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -105,8 +157,8 @@ class SecureApp(ctk.CTk):
 
         ctk.CTkButton(header, text="Cerrar sesión", command=self.handle_logout).grid(row=0, column=1)
 
-        self.tabs = ctk.CTkTabview(self.dashboard)
-        self.tabs.grid(row=1, column=0, sticky="nsew")
+        self.tabs = ctk.CTkTabview(self.dashboard, segmented_button_selected_color=self.accent)
+        self.tabs.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
 
         self._build_keys_tab()
         self._build_password_tab()
@@ -121,21 +173,36 @@ class SecureApp(ctk.CTk):
     def _build_keys_tab(self) -> None:
         tab = self.tabs.add("Llaves RSA")
 
-        ctk.CTkLabel(
-            tab,
-            text="Genera y almacena tu llave pública/privada.",
-            wraplength=520,
-        ).pack(pady=10)
+        container = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=14)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+        container.columnconfigure(0, weight=1)
 
-        self.keys_box = ctk.CTkTextbox(tab, height=200)
-        self.keys_box.pack(fill="x", padx=18, pady=12)
+        ctk.CTkLabel(
+            container,
+            text="Genera y almacena tu llave pública/privada.",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 6))
+        ctk.CTkLabel(
+            container,
+            text="Protege tus proyectos con criptografía de 2048 bits.",
+            text_color="#9fb3c8",
+        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
+
+        self.keys_box = ctk.CTkTextbox(container, height=220)
+        self.keys_box.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
         self.keys_box.insert("1.0", "Presiona para generar tus llaves RSA.")
         self.keys_box.configure(state="disabled")
 
-        ctk.CTkButton(tab, text="Generar par RSA", command=self.handle_generate_keys).pack(pady=6)
+        ctk.CTkButton(
+            container,
+            text="Generar par RSA",
+            fg_color=self.accent,
+            hover_color="#38b2a6",
+            command=self.handle_generate_keys,
+        ).grid(row=3, column=0, pady=6)
 
-        self.keys_status_label = ctk.CTkLabel(tab, text="")
-        self.keys_status_label.pack()
+        self.keys_status_label = ctk.CTkLabel(container, text="", text_color="#9fb3c8")
+        self.keys_status_label.grid(row=4, column=0, pady=(4, 18))
 
         existing = get_keys_for_user(self.current_user)
         if existing:
@@ -156,22 +223,34 @@ class SecureApp(ctk.CTk):
     # ================================
     def _build_password_tab(self) -> None:
         tab = self.tabs.add("Contraseña")
-        tab.columnconfigure(1, weight=1)
+        tab.columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(tab, text="Actualiza tu contraseña").grid(row=0, column=0, columnspan=2, padx=18, pady=10)
+        form = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=14)
+        form.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        form.columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(tab, text="Actual").grid(row=1, column=0, padx=18)
-        self.old_pass_entry = ctk.CTkEntry(tab, show="*")
-        self.old_pass_entry.grid(row=1, column=1, padx=18, pady=6)
+        ctk.CTkLabel(form, text="Actualiza tu contraseña", font=ctk.CTkFont(size=16, weight="bold")).grid(
+            row=0, column=0, columnspan=2, padx=18, pady=12, sticky="w"
+        )
 
-        ctk.CTkLabel(tab, text="Nueva").grid(row=2, column=0, padx=18)
-        self.new_pass_entry = ctk.CTkEntry(tab, show="*")
-        self.new_pass_entry.grid(row=2, column=1, padx=18, pady=6)
+        ctk.CTkLabel(form, text="Actual").grid(row=1, column=0, padx=18, sticky="w")
+        self.old_pass_entry = ctk.CTkEntry(form, show="*")
+        self.old_pass_entry.grid(row=1, column=1, padx=18, pady=6, sticky="ew")
 
-        ctk.CTkButton(tab, text="Guardar", command=self.handle_change_password).grid(row=3, column=1, sticky="e")
+        ctk.CTkLabel(form, text="Nueva").grid(row=2, column=0, padx=18, sticky="w")
+        self.new_pass_entry = ctk.CTkEntry(form, show="*")
+        self.new_pass_entry.grid(row=2, column=1, padx=18, pady=6, sticky="ew")
 
-        self.pass_status = ctk.CTkLabel(tab, text="")
-        self.pass_status.grid(row=4, column=0, columnspan=2, padx=18, pady=8)
+        ctk.CTkButton(
+            form,
+            text="Guardar",
+            fg_color=self.accent,
+            hover_color="#38b2a6",
+            command=self.handle_change_password,
+        ).grid(row=3, column=1, sticky="e", padx=18, pady=(10, 6))
+
+        self.pass_status = ctk.CTkLabel(form, text="", text_color="#9fb3c8")
+        self.pass_status.grid(row=4, column=0, columnspan=2, padx=18, pady=(6, 14), sticky="w")
 
     # ================================
     # TAB: ARCHIVOS DE CÓDIGO
@@ -179,11 +258,29 @@ class SecureApp(ctk.CTk):
     def _build_files_tab(self) -> None:
         tab = self.tabs.add("Archivos")
 
-        frame = ctk.CTkFrame(tab)
-        frame.pack(fill="x", padx=18, pady=18)
+        frame = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=14)
+        frame.pack(fill="both", expand=True, padx=16, pady=16)
 
-        ctk.CTkButton(frame, text="Obtener código", command=self.handle_download).pack(side="left", expand=True, padx=10)
-        ctk.CTkButton(frame, text="Subir código", command=self.handle_upload_file).pack(side="left", expand=True, padx=10)
+        ctk.CTkLabel(
+            frame,
+            text="Gestiona los artefactos cifrados de tus proyectos.",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(pady=(14, 6))
+        ctk.CTkLabel(frame, text="Descarga o sube código protegido para tu equipo.", text_color="#9fb3c8").pack()
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.pack(fill="x", pady=20)
+
+        ctk.CTkButton(
+            actions,
+            text="Obtener código",
+            fg_color=self.accent,
+            hover_color="#38b2a6",
+            command=self.handle_download,
+        ).pack(side="left", expand=True, padx=12, pady=4, fill="x")
+        ctk.CTkButton(actions, text="Subir código", command=self.handle_upload_file).pack(
+            side="left", expand=True, padx=12, pady=4, fill="x"
+        )
 
     # ================================
     # TAB: ADMIN (solo líder)
@@ -192,18 +289,23 @@ class SecureApp(ctk.CTk):
         tab = self.tabs.add("Usuarios (líder)")
         tab.columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(tab, text="Estado de llaves RSA").grid(row=0, column=0, padx=18, pady=16)
+        ctk.CTkLabel(tab, text="Estado de llaves RSA", font=ctk.CTkFont(size=16, weight="bold")).grid(
+            row=0, column=0, padx=18, pady=(16, 10), sticky="w"
+        )
+        ctk.CTkLabel(tab, text="Monitorea que cada integrante haya generado su par.", text_color="#9fb3c8").grid(
+            row=1, column=0, padx=18, sticky="w"
+        )
 
-        scroll = ctk.CTkScrollableFrame(tab, height=260)
-        scroll.grid(row=1, column=0, sticky="nsew")
+        scroll = ctk.CTkScrollableFrame(tab, height=260, fg_color="#0f1c32", corner_radius=12)
+        scroll.grid(row=2, column=0, sticky="nsew", padx=16, pady=16)
 
         for user in list_users():
-            frame = ctk.CTkFrame(scroll)
-            frame.pack(fill="x", padx=6, pady=4)
+            frame = ctk.CTkFrame(scroll, fg_color="#132744")
+            frame.pack(fill="x", padx=8, pady=6)
 
-            ctk.CTkLabel(frame, text=user.username).pack(side="left", padx=8)
+            ctk.CTkLabel(frame, text=user.username, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8)
             status = "OK" if user_has_keys(user) else "Falta generar"
-            ctk.CTkLabel(frame, text=status).pack(side="right", padx=8)
+            ctk.CTkLabel(frame, text=status, text_color="#9fb3c8").pack(side="right", padx=8)
 
     # ================================
     # EVENTOS
