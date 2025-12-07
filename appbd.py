@@ -194,13 +194,14 @@ class SecureApp(ctk.CTk):
         self.keys_box.insert("1.0", "Presiona para generar tus llaves RSA.")
         self.keys_box.configure(state="disabled")
 
-        ctk.CTkButton(
+        self.generate_keys_btn = ctk.CTkButton(
             container,
             text="Generar par RSA",
             fg_color=self.accent,
             hover_color="#38b2a6",
             command=self.handle_generate_keys,
-        ).grid(row=3, column=0, pady=6)
+        )
+        self.generate_keys_btn.grid(row=3, column=0, pady=6)
 
         self.keys_status_label = ctk.CTkLabel(container, text="", text_color="#9fb3c8")
         self.keys_status_label.grid(row=4, column=0, pady=(4, 18))
@@ -209,13 +210,15 @@ class SecureApp(ctk.CTk):
         if existing:
             self._render_keys(existing)
             self.keys_status_label.configure(text="Llave pública ya registrada.")
+            self.generate_keys_btn.configure(state="disabled")
+
 
     def _render_keys(self, keypair: KeyPair):
         self.keys_box.configure(state="normal")
         self.keys_box.delete("1.0", "end")
         self.keys_box.insert(
             "1.0",
-            f"Llave pública:\n{keypair.public_key}\n\nLlave privada:\n{keypair.private_key}",
+            f"Llave pública:\n{keypair.public_key}",
         )
         self.keys_box.configure(state="disabled")
 
