@@ -2,15 +2,16 @@ from typing import List, Optional, Tuple
 from rsa_utils import generar_par_claves_rsa, firmar_archivo
 from crypto_utils import hash_password, verify_password
 from hash_utils import hash_archivo
-from aes_hybrid import cifrar_con_aes_maestra
+from aes_hybrid import cifrar_archivo_hibrido_puro
 from models import KeyPair, User
 from db import get_connection
 from mysql.connector import Error
 import os
 
-# =============================
+
+# ============================================================
 #   USUARIOS
-# =============================
+# ============================================================
 
 def create_user(username: str, password: str) -> Tuple[bool, str, Optional[User]]:
     if len(password) < 4 or len(password) > 20:
@@ -46,6 +47,7 @@ def create_user(username: str, password: str) -> Tuple[bool, str, Optional[User]
         conn.close()
 
 
+
 def find_user_by_username(username: str) -> Optional[User]:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -73,6 +75,7 @@ def find_user_by_username(username: str) -> Optional[User]:
     )
 
 
+
 def authenticate(username: str, password: str):
     user = find_user_by_username(username)
     if not user:
@@ -85,6 +88,7 @@ def authenticate(username: str, password: str):
         return False, "El usuario está inactivo.", None
 
     return True, f"Bienvenido, {user.username}.", user
+
 
 
 def update_password(user: User, old_password: str, new_password: str):
@@ -115,6 +119,7 @@ def update_password(user: User, old_password: str, new_password: str):
     return True, "Contraseña actualizada correctamente."
 
 
+
 def list_users() -> List[User]:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -141,9 +146,10 @@ def list_users() -> List[User]:
     ]
 
 
-# =============================
+
+# ============================================================
 #   LLAVES RSA
-# =============================
+# ============================================================
 
 def generate_and_store_keys(user: User) -> KeyPair:
     public_key, private_key = generar_par_claves_rsa()
@@ -151,18 +157,19 @@ def generate_and_store_keys(user: User) -> KeyPair:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Usamos REPLACE para actualizar si ya existe o insertar si no
     cursor.execute("""
-        REPLACE INTO LlavesRSA (id_usuario, llave_publica, llave_privada)
-        VALUES (%s, %s, %s)
-    """, (user.id, public_key, private_key))
+        REPLACE INTO LlavesRSA (id_usuario, llave_publica)
+        VALUES (%s, %s)
+    """, (user.id, public_key))
 
     conn.commit()
 
     cursor.close()
     conn.close()
 
+    # Guardamos solo la pública en la BD; la privada se devuelve para guardar localmente
     return KeyPair(user_id=user.id, public_key=public_key, private_key=private_key)
+
 
 
 def get_keys_for_user(user: User) -> Optional[KeyPair]:
@@ -170,7 +177,7 @@ def get_keys_for_user(user: User) -> Optional[KeyPair]:
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        SELECT llave_publica, llave_privada
+        SELECT llave_publica
         FROM LlavesRSA
         WHERE id_usuario = %s
     """, (user.id,))
@@ -186,50 +193,42 @@ def get_keys_for_user(user: User) -> Optional[KeyPair]:
     return KeyPair(
         user_id=user.id,
         public_key=row["llave_publica"],
-        private_key=row["llave_privada"],
+        private_key=None
     )
+
 
 
 def user_has_keys(user: User) -> bool:
     return get_keys_for_user(user) is not None
 
 
-# =============================
+
+# ============================================================
 #   PROYECTOS Y PERMISOS
-# =============================
+# ============================================================
 
-def store_project_file(user: User, original_path: str, encrypted_path: str):
-    """
-    (Función Legacy) Crea un proyecto NUEVO desde cero.
-    """
-    filename = os.path.basename(original_path)
-
+def obtener_proyectos_escritura(id_usuario: int):
     conn = get_connection()
-    cursor = conn.cursor()
-
-    # Nota: Aquí no estamos asignando clave maestra real, solo insertando para compatibilidad
-    # Para el flujo real, se debe usar subir_archivo_con_llave_local sobre un proyecto existente
-    cursor.execute("""
-        INSERT INTO Proyectos (nombre_proyecto, clave_AES_maestra, ubicacion_codigo_cifrado)
-        VALUES (%s, 'CLAVE_DUMMY_PARA_LEGACY', %s)
-    """, (filename, encrypted_path))
-
-    proyecto_id = cursor.lastrowid
+    cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        INSERT INTO Permisos_Usuario_Proyecto (id_proyecto, id_usuario, permiso)
-        VALUES (%s, %s, 'ESCRITURA')
-    """, (proyecto_id, user.id))
+        SELECT p.id_proyecto, p.nombre_proyecto
+        FROM Proyectos p
+        JOIN Permisos_Usuario_Proyecto pup
+            ON p.id_proyecto = pup.id_proyecto
+        WHERE pup.id_usuario = %s AND pup.permiso = 'ESCRITURA'
+    """, (id_usuario,))
 
-    conn.commit()
+    rows = cursor.fetchall()
+
     cursor.close()
     conn.close()
 
-    return proyecto_id
+    return rows
+
 
 
 def get_projects_for_user(user: User):
-    """Obtiene proyectos donde el usuario tiene algun permiso (Lectura o Escritura)"""
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -242,117 +241,94 @@ def get_projects_for_user(user: User):
     """, (user.id,))
 
     rows = cursor.fetchall()
+
     cursor.close()
     conn.close()
+
     return rows
 
 
-# --- NUEVAS FUNCIONES PARA EL FLUJO SEGURO ---
 
-def obtener_proyectos_escritura(id_usuario: int):
+# ============================================================
+#   SUBIDA HÍBRIDA REAL (AES + RSA)
+# ============================================================
+
+def subir_archivo_hibrido(id_usuario, id_proyecto, ruta_archivo, ruta_llave_privada):
     """
-    Obtiene lista de proyectos donde el usuario tiene permiso explícito de ESCRITURA.
+    Flujo híbrido real:
+    1. Hash del archivo
+    2. Firma con llave privada local
+    3. Cifrado AES-GCM
+    4. Cifrado RSA de la clave AES
+    5. Guardar firma + hash + aes_key_cifrada + ruta
     """
+
     conn = get_connection()
-    if not conn: return []
-    
-    try:
-        cursor = conn.cursor(dictionary=True)
-        query = """
-            SELECT p.id_proyecto, p.nombre_proyecto 
-            FROM proyectos p
-            JOIN permisos_usuario_proyecto pup ON p.id_proyecto = pup.id_proyecto
-            WHERE pup.id_usuario = %s AND pup.permiso = 'ESCRITURA'
-        """
-        cursor.execute(query, (id_usuario,))
-        return cursor.fetchall()
-    except Error as e:
-        print(f"Error BD: {e}")
-        return []
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+    cursor = conn.cursor(dictionary=True)
 
-
-def subir_archivo_con_llave_local(id_usuario, id_proyecto, ruta_archivo, ruta_llave_privada):
-    """
-    Orquesta la subida segura:
-    1. Valida permiso en BD.
-    2. Obtiene llave AES de BD.
-    3. Firma usando la llave privada LOCAL (del archivo).
-    4. Cifra y guarda en BD.
-    """
-    conn = get_connection()
-    if not conn: return False, "Error de conexión a la Base de Datos"
-    
     try:
-        cursor = conn.cursor(dictionary=True)
-        
-        # A. VALIDAR PERMISO DE ESCRITURA
+        # 1. Validar permiso
         cursor.execute("""
-            SELECT permiso FROM permisos_usuario_proyecto 
+            SELECT permiso FROM Permisos_Usuario_Proyecto
             WHERE id_usuario=%s AND id_proyecto=%s AND permiso='ESCRITURA'
         """, (id_usuario, id_proyecto))
-        
+
         if not cursor.fetchone():
-            return False, "⛔ ACCESO DENEGADO: No tienes permiso de ESCRITURA en este proyecto."
+            return False, "No tienes permiso para subir a este proyecto."
 
-        # B. OBTENER CLAVE MAESTRA AES DEL PROYECTO
-        cursor.execute("SELECT clave_AES_maestra FROM proyectos WHERE id_proyecto=%s", (id_proyecto,))
-        row_proj = cursor.fetchone()
-        if not row_proj: return False, "El proyecto no existe."
-        
-        clave_aes = row_proj['clave_AES_maestra'] # Bytes desde MySQL
+        # 2. Obtener llave pública RSA
+        cursor.execute("SELECT llave_publica FROM LlavesRSA WHERE id_usuario=%s", (id_usuario,))
+        row = cursor.fetchone()
+        if not row:
+            return False, "El usuario no tiene llave pública registrada."
 
-        # C. FIRMA DIGITAL (Cliente)
-        # 1. Leemos la llave privada del disco (CLIENTE)
-        with open(ruta_llave_privada, "rb") as f:
-            pem_privada_str = f.read().decode('utf-8')
-        
-        # 2. Calculamos Hash
+        public_pem = row["llave_publica"]
+
+        # 3. Hash del archivo
         hash_val = hash_archivo(ruta_archivo)
-        
-        # 3. Firmamos (Tu función rsa_utils guarda el .sig en disco, leemos eso)
-        ruta_sig = firmar_archivo(ruta_archivo, pem_privada_str)
-        
-        # 4. Leemos la firma generada para poder guardarla en la BD
-        with open(ruta_sig, "rb") as f:
-            firma_bytes = f.read() 
 
-        # D. CIFRADO (Servidor/Híbrido)
-        # Ciframos el archivo usando la llave maestra del proyecto
-        ruta_enc = cifrar_con_aes_maestra(ruta_archivo, clave_aes)
+        # 4. Firma digital
+        with open(ruta_llave_privada, "rb") as f:
+            private_pem = f.read().decode("utf-8")
 
-        # E. ACTUALIZAR BASE DE DATOS
-        # 1. Actualizar ubicación del archivo cifrado en tabla Proyectos
-        cursor.execute("UPDATE proyectos SET ubicacion_codigo_cifrado=%s WHERE id_proyecto=%s", (ruta_enc, id_proyecto))
-        
-        # 2. Registrar el evento en Auditoría de Firmas
-        sql_audit = """
-            INSERT INTO auditoria_firmas 
+        ruta_sig = firmar_archivo(ruta_archivo, private_pem)
+        firma_bytes = open(ruta_sig, "rb").read()
+
+        # 5. Cifrado híbrido real
+        enc_path, encrypted_aes_key = cifrar_archivo_hibrido_puro(ruta_archivo, public_pem)
+
+        # 6. Guardar información del archivo
+        cursor.execute("""
+            UPDATE Proyectos
+            SET ubicacion_codigo_cifrado=%s,
+                clave_AES_maestra=%s
+            WHERE id_proyecto=%s
+        """, (enc_path, encrypted_aes_key, id_proyecto))
+
+        # 7. Guardar auditoría
+        cursor.execute("""
+            INSERT INTO Auditoria_Firmas
             (id_proyecto, id_usuario, firma_RSA, hash_del_codigo_aceptado, fecha)
             VALUES (%s, %s, %s, %s, NOW())
-        """
-        cursor.execute(sql_audit, (id_proyecto, id_usuario, firma_bytes, hash_val))
-        
+        """, (id_proyecto, id_usuario, firma_bytes, hash_val))
+
         conn.commit()
-        return True, f"✅ Archivo subido exitosamente.\nIntegridad (Hash): {hash_val[:10]}..."
+        return True, "Subida híbrida completada correctamente."
 
     except Exception as e:
-        print(f"Error detallado: {e}")
-        return False, f"Error del sistema: {str(e)}"
+        return False, f"Error durante la subida híbrida: {e}"
+
     finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
+        cursor.close()
+        conn.close()
 
 
-def download_project_file(proyecto_id: int):
-    """
-    Obtiene la ruta del archivo y la CLAVE AES MAESTRA para poder descifrarlo.
-    Retorna: (ubicacion_cifrada, clave_aes_maestra)
-    """
+
+# ============================================================
+#   DESCARGA DE ARCHIVO
+# ============================================================
+
+def download_project_file(id_proyecto: int):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -360,7 +336,7 @@ def download_project_file(proyecto_id: int):
         SELECT ubicacion_codigo_cifrado, clave_AES_maestra
         FROM Proyectos
         WHERE id_proyecto = %s
-    """, (proyecto_id,))
+    """, (id_proyecto,))
 
     row = cursor.fetchone()
 

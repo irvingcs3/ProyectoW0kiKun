@@ -16,13 +16,12 @@ from storagebd import (
     user_has_keys,
     get_projects_for_user,
     download_project_file,
-    # store_project_file,  <-- Ya no usamos la función legacy
-    obtener_proyectos_escritura,   # <--- NUEVA
-    subir_archivo_con_llave_local  # <--- NUEVA
+    obtener_proyectos_escritura,
+    subir_archivo_hibrido
 )
 
 # ---- CRYPTO MODULES ----
-from aes_hybrid import cifrar_archivo_hibrido, descifrar_archivo_hibrido
+from aes_hybrid import descargar_archivo_hibrido
 from rsa_utils import firmar_archivo
 from hash_utils import hash_archivo
 
@@ -255,7 +254,7 @@ class SecureApp(ctk.CTk):
         self.pass_status.grid(row=4, column=0, columnspan=2, padx=18, pady=(6, 14), sticky="w")
 
     # ================================
-    # TAB: ARCHIVOS DE CÓDIGO
+    # TAB: ARCHIVOS
     # ================================
     def _build_files_tab(self) -> None:
         tab = self.tabs.add("Archivos")
@@ -280,12 +279,15 @@ class SecureApp(ctk.CTk):
             hover_color="#38b2a6",
             command=self.handle_download,
         ).pack(side="left", expand=True, padx=12, pady=4, fill="x")
-        ctk.CTkButton(actions, text="Subir código", command=self.handle_upload_file).pack(
-            side="left", expand=True, padx=12, pady=4, fill="x"
-        )
+
+        ctk.CTkButton(
+            actions,
+            text="Subir código",
+            command=self.handle_upload_file
+        ).pack(side="left", expand=True, padx=12, pady=4, fill="x")
 
     # ================================
-    # TAB: ADMIN (solo líder)
+    # TAB: ADMIN (Solo líder)
     # ================================
     def _build_admin_tab(self) -> None:
         tab = self.tabs.add("Usuarios (líder)")
@@ -371,41 +373,45 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Error", msg)
 
     # ================================
-    # SUBIR ARCHIVO (Lógica Actualizada)
+    # SUBIR ARCHIVO (Híbrido Real AES + RSA)
     # ================================
     def handle_upload_file(self):
         if not self.current_user:
             return
 
-        # 1. Verificar si tiene proyectos con permiso de ESCRITURA
         proyectos = obtener_proyectos_escritura(self.current_user.id)
         if not proyectos:
             messagebox.showerror("Acceso Denegado", "No tienes permisos de ESCRITURA en ningún proyecto.")
             return
 
-        # 2. Seleccionar el archivo de CÓDIGO (Source Code)
         path_codigo = askopenfilename(title="1. Selecciona el código fuente a subir")
-        if not path_codigo: return
+        if not path_codigo:
+            return
 
-        # 3. Seleccionar la LLAVE PRIVADA (Local - .txt o .pem)
-        # Se asume que el usuario guardó sus llaves antes.
-        messagebox.showinfo("Seguridad Requerida", "Paso de seguridad: Selecciona tu archivo de Llaves RSA (el que descargaste) para firmar digitalmente esta subida.")
-        path_llave = askopenfilename(title="2. Selecciona tu archivo de Llaves (.txt/.pem)", filetypes=[("Llaves", "*.txt *.pem"), ("Todos", "*.*")])
-        if not path_llave: return
+        messagebox.showinfo(
+            "Seguridad requerida",
+            "Selecciona tu archivo de llave privada RSA para firmar y cifrar la clave AES."
+        )
 
-        # 4. Seleccionar el PROYECTO DESTINO
+        path_llave_privada = askopenfilename(
+            title="2. Selecciona tu llave privada (.pem/.txt)",
+            filetypes=[("Llave privada", "*.pem *.txt"), ("Todos", "*.*")]
+        )
+        if not path_llave_privada:
+            return
+
         nombres = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
         idx = self.select_from_list("Selecciona Proyecto Destino", nombres)
-        if idx is None: return
-        
-        id_proyecto = proyectos[idx]['id_proyecto']
+        if idx is None:
+            return
 
-        # 5. EJECUTAR SUBIDA SEGURA
-        ok, msg = subir_archivo_con_llave_local(
-            self.current_user.id, 
-            id_proyecto, 
-            path_codigo, 
-            path_llave
+        id_proyecto = proyectos[idx]["id_proyecto"]
+
+        ok, msg = subir_archivo_hibrido(
+            self.current_user.id,
+            id_proyecto,
+            path_codigo,
+            path_llave_privada
         )
 
         if ok:
@@ -414,15 +420,10 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Error en Subida", msg)
 
     # ================================
-    # DESCARGAR ARCHIVO (Mantenemos lógica existente por ahora)
+    # DESCARGAR ARCHIVO (Híbrido Real AES + RSA)
     # ================================
     def handle_download(self):
         if not self.current_user:
-            return
-
-        keys = get_keys_for_user(self.current_user)
-        if not keys:
-            messagebox.showerror("Error", "No tienes llaves RSA generadas.")
             return
 
         proyectos = get_projects_for_user(self.current_user)
@@ -436,16 +437,33 @@ class SecureApp(ctk.CTk):
             return
 
         proyecto = proyectos[idx]
-        enc_path = proyecto["ubicacion_codigo_cifrado"]
+        id_proyecto = proyecto["id_proyecto"]
 
-        # Nota: La descarga segura requeriría actualizar descifrar_archivo_hibrido
-        # para usar la clave maestra de la BD (si se usó el nuevo método de subida).
-        # Por ahora se mantiene la llamada existente.
+        enc_path, encrypted_aes_key = download_project_file(id_proyecto)
+        if not enc_path or not encrypted_aes_key:
+            messagebox.showerror("Error", "No se encontró información del proyecto.")
+            return
+
+        messagebox.showinfo(
+            "Seguridad requerida",
+            "Selecciona tu llave privada RSA para descifrar el archivo."
+        )
+
+        path_llave_privada = askopenfilename(
+            title="Selecciona tu llave privada RSA",
+            filetypes=[("Llave privada", "*.pem *.txt"), ("Todos", "*.*")]
+        )
+        if not path_llave_privada:
+            return
+
+        with open(path_llave_privada, "rb") as f:
+            private_pem = f.read().decode("utf-8")
+
         try:
-            dec_path = descifrar_archivo_hibrido(enc_path, keys.private_key)
-            messagebox.showinfo("Descifrado", f"Archivo listo en:\n{dec_path}")
+            out_path = descargar_archivo_hibrido(enc_path, private_pem, encrypted_aes_key)
+            messagebox.showinfo("Descifrado Exitoso", f"Archivo listo en:\n{out_path}")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo descifrar (posiblemente formato antiguo o clave incorrecta): {e}")
+            messagebox.showerror("Error", f"No se pudo descifrar el archivo:\n{e}")
 
     # ================================
     # SELECCIÓN DE LISTA
@@ -455,8 +473,7 @@ class SecureApp(ctk.CTk):
         win.title(title)
         win.geometry("420x200")
         
-        # Hacer la ventana modal
-        win.transient(self) 
+        win.transient(self)
         win.grab_set()
 
         var = ctk.StringVar(value=items[0])
@@ -474,6 +491,9 @@ class SecureApp(ctk.CTk):
         self.wait_window(win)
         return result["value"]
 
+    # ================================
+    # LOGOUT
+    # ================================
     def handle_logout(self):
         self.current_user = None
         self.render_login()
