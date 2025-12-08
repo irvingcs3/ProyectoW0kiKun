@@ -17,11 +17,14 @@ from storagebd import (
     get_projects_for_user,
     download_project_file,
     obtener_proyectos_escritura,
-    subir_archivo_hibrido
+    subir_archivo_hibrido,
+    crear_nuevo_proyecto,
+    asignar_permiso_proyecto,
+    obtener_todos_los_proyectos
 )
 
 # ---- CRYPTO MODULES ----
-from aes_hybrid import descargar_archivo_hibrido
+from aes_hybrid import descifrar_con_aes_maestra
 from rsa_utils import firmar_archivo
 from hash_utils import hash_archivo
 
@@ -212,13 +215,12 @@ class SecureApp(ctk.CTk):
             self.keys_status_label.configure(text="Llave pública ya registrada.")
             self.generate_keys_btn.configure(state="disabled")
 
-
     def _render_keys(self, keypair: KeyPair):
         self.keys_box.configure(state="normal")
         self.keys_box.delete("1.0", "end")
         self.keys_box.insert(
             "1.0",
-            f"Llave pública:\n{keypair.public_key}",
+            f"Llave pública:\n{keypair.public_key}\n\nLlave privada (NO SE GUARDA):\nVerifica tu archivo local.\n",
         )
         self.keys_box.configure(state="disabled")
 
@@ -282,37 +284,106 @@ class SecureApp(ctk.CTk):
             hover_color="#38b2a6",
             command=self.handle_download,
         ).pack(side="left", expand=True, padx=12, pady=4, fill="x")
-
-        ctk.CTkButton(
-            actions,
-            text="Subir código",
-            command=self.handle_upload_file
-        ).pack(side="left", expand=True, padx=12, pady=4, fill="x")
+        ctk.CTkButton(actions, text="Subir código", command=self.handle_upload_file).pack(
+            side="left", expand=True, padx=12, pady=4, fill="x"
+        )
 
     # ================================
-    # TAB: ADMIN (Solo líder)
+    # TAB: ADMIN (solo líder)
     # ================================
     def _build_admin_tab(self) -> None:
-        tab = self.tabs.add("Usuarios (líder)")
+        tab = self.tabs.add("Admin")
         tab.columnconfigure(0, weight=1)
+        tab.columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(tab, text="Estado de llaves RSA", font=ctk.CTkFont(size=16, weight="bold")).grid(
-            row=0, column=0, padx=18, pady=(16, 10), sticky="w"
-        )
-        ctk.CTkLabel(tab, text="Monitorea que cada integrante haya generado su par.", text_color="#9fb3c8").grid(
-            row=1, column=0, padx=18, sticky="w"
-        )
+        # SECCIÓN 1: CREAR PROYECTO
+        frame_crear = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=12)
+        frame_crear.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
-        scroll = ctk.CTkScrollableFrame(tab, height=260, fg_color="#0f1c32", corner_radius=12)
-        scroll.grid(row=2, column=0, sticky="nsew", padx=16, pady=16)
+        ctk.CTkLabel(frame_crear, text="Crear Nuevo Proyecto", font=ctk.CTkFont(weight="bold")).pack(pady=(10,5))
+        self.new_proj_entry = ctk.CTkEntry(frame_crear, placeholder_text="Nombre del Proyecto")
+        self.new_proj_entry.pack(pady=5, padx=10, fill="x")
+        ctk.CTkButton(frame_crear, text="Crear", fg_color=self.accent, hover_color="#38b2a6", command=self.handle_create_project).pack(pady=10)
+
+        # SECCIÓN 2: ASIGNAR PERMISOS
+        frame_permisos = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=12)
+        frame_permisos.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+
+        ctk.CTkLabel(frame_permisos, text="Asignar Permisos", font=ctk.CTkFont(weight="bold")).pack(pady=(10,5))
+        
+        ctk.CTkButton(frame_permisos, text="Refrescar Listas", command=self.refresh_admin_lists, width=100).pack(pady=5)
+
+        self.combo_proyectos = ctk.CTkComboBox(frame_permisos, values=["Cargar..."])
+        self.combo_proyectos.pack(pady=5, padx=10)
+        
+        self.combo_usuarios = ctk.CTkComboBox(frame_permisos, values=["Cargar..."])
+        self.combo_usuarios.pack(pady=5, padx=10)
+
+        self.combo_tipo = ctk.CTkComboBox(frame_permisos, values=["LECTURA", "ESCRITURA"])
+        self.combo_tipo.pack(pady=5, padx=10)
+
+        ctk.CTkButton(frame_permisos, text="Asignar", fg_color=self.accent, hover_color="#38b2a6", command=self.handle_assign_permission).pack(pady=10)
+
+        # SECCIÓN 3: LISTA DE USUARIOS (MONITOREO)
+        frame_lista = ctk.CTkScrollableFrame(tab, height=200, fg_color="#0f1c32", corner_radius=12)
+        frame_lista.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
+        
+        ctk.CTkLabel(frame_lista, text="Estado de Usuarios y Llaves", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
 
         for user in list_users():
-            frame = ctk.CTkFrame(scroll, fg_color="#132744")
-            frame.pack(fill="x", padx=8, pady=6)
+            f = ctk.CTkFrame(frame_lista, fg_color="#132744")
+            f.pack(fill="x", padx=5, pady=2)
+            ctk.CTkLabel(f, text=f"ID {user.id} | {user.username}").pack(side="left", padx=10)
+            status = "Llaves OK" if user_has_keys(user) else "Sin Llaves"
+            ctk.CTkLabel(f, text=status, text_color="gray").pack(side="right", padx=10)
 
-            ctk.CTkLabel(frame, text=user.username, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8)
-            status = "OK" if user_has_keys(user) else "Falta generar"
-            ctk.CTkLabel(frame, text=status, text_color="#9fb3c8").pack(side="right", padx=8)
+    def refresh_admin_lists(self):
+        proyectos = obtener_todos_los_proyectos()
+        if proyectos:
+            vals = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
+            self.combo_proyectos.configure(values=vals)
+            self.combo_proyectos.set(vals[0])
+        else:
+            self.combo_proyectos.configure(values=["Sin proyectos"])
+
+        usuarios = list_users()
+        if usuarios:
+            vals = [f"{u.id} - {u.username}" for u in usuarios]
+            self.combo_usuarios.configure(values=vals)
+            self.combo_usuarios.set(vals[0])
+        else:
+            self.combo_usuarios.configure(values=["Sin usuarios"])
+
+    def handle_create_project(self):
+        nombre = self.new_proj_entry.get()
+        if not nombre:
+            return
+        
+        ok, msg = crear_nuevo_proyecto(nombre, self.current_user.id)
+        if ok:
+            messagebox.showinfo("Éxito", msg)
+            self.new_proj_entry.delete(0, 'end')
+            self.refresh_admin_lists()
+        else:
+            messagebox.showerror("Error", msg)
+
+    def handle_assign_permission(self):
+        proj_str = self.combo_proyectos.get()
+        user_str = self.combo_usuarios.get()
+        permiso = self.combo_tipo.get()
+
+        if "Sin " in proj_str or "Sin " in user_str:
+            return
+
+        id_proj = int(proj_str.split(" - ")[0])
+        id_user = int(user_str.split(" - ")[0])
+
+        ok, msg = asignar_permiso_proyecto(id_proj, id_user, permiso)
+        if ok:
+            messagebox.showinfo("Éxito", msg)
+        else:
+            messagebox.showerror("Error", msg)
+
 
     # ================================
     # EVENTOS
@@ -328,6 +399,9 @@ class SecureApp(ctk.CTk):
 
         self.current_user = user_obj
         self.render_dashboard()
+        
+        if self.current_user.username == "lider":
+            self.refresh_admin_lists()
 
     def handle_register(self):
         user = self.username_entry.get()
@@ -376,7 +450,7 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Error", msg)
 
     # ================================
-    # SUBIR ARCHIVO (Híbrido Real AES + RSA)
+    # SUBIR ARCHIVO (Lógica Segura)
     # ================================
     def handle_upload_file(self):
         if not self.current_user:
@@ -388,33 +462,23 @@ class SecureApp(ctk.CTk):
             return
 
         path_codigo = askopenfilename(title="1. Selecciona el código fuente a subir")
-        if not path_codigo:
-            return
+        if not path_codigo: return
 
-        messagebox.showinfo(
-            "Seguridad requerida",
-            "Selecciona tu archivo de llave privada RSA para firmar y cifrar la clave AES."
-        )
-
-        path_llave_privada = askopenfilename(
-            title="2. Selecciona tu llave privada (.pem/.txt)",
-            filetypes=[("Llave privada", "*.pem *.txt"), ("Todos", "*.*")]
-        )
-        if not path_llave_privada:
-            return
+        messagebox.showinfo("Seguridad Requerida", "Paso de seguridad: Selecciona tu archivo de Llaves RSA para firmar.")
+        path_llave = askopenfilename(title="2. Selecciona tu archivo de Llaves (.txt/.pem)", filetypes=[("Llaves", "*.txt *.pem"), ("Todos", "*.*")])
+        if not path_llave: return
 
         nombres = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
         idx = self.select_from_list("Selecciona Proyecto Destino", nombres)
-        if idx is None:
-            return
-
-        id_proyecto = proyectos[idx]["id_proyecto"]
+        if idx is None: return
+        
+        id_proyecto = proyectos[idx]['id_proyecto']
 
         ok, msg = subir_archivo_hibrido(
-            self.current_user.id,
-            id_proyecto,
-            path_codigo,
-            path_llave_privada
+            self.current_user.id, 
+            id_proyecto, 
+            path_codigo, 
+            path_llave
         )
 
         if ok:
@@ -423,7 +487,7 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Error en Subida", msg)
 
     # ================================
-    # DESCARGAR ARCHIVO (Híbrido Real AES + RSA)
+    # DESCARGAR ARCHIVO (Lógica Segura)
     # ================================
     def handle_download(self):
         if not self.current_user:
@@ -434,39 +498,25 @@ class SecureApp(ctk.CTk):
             messagebox.showerror("Sin proyectos", "No tienes permisos sobre proyectos.")
             return
 
-        nombres = [p["nombre_proyecto"] for p in proyectos]
+        nombres = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
         idx = self.select_from_list("Selecciona proyecto", nombres)
         if idx is None:
             return
 
         proyecto = proyectos[idx]
-        id_proyecto = proyecto["id_proyecto"]
+        id_proyecto = proyecto['id_proyecto']
+        
+        enc_path, clave_maestra = download_project_file(id_proyecto)
 
-        enc_path, encrypted_aes_key = download_project_file(id_proyecto)
-        if not enc_path or not encrypted_aes_key:
-            messagebox.showerror("Error", "No se encontró información del proyecto.")
+        if not enc_path:
+            messagebox.showerror("Error", "No hay archivo cifrado para este proyecto.")
             return
-
-        messagebox.showinfo(
-            "Seguridad requerida",
-            "Selecciona tu llave privada RSA para descifrar el archivo."
-        )
-
-        path_llave_privada = askopenfilename(
-            title="Selecciona tu llave privada RSA",
-            filetypes=[("Llave privada", "*.pem *.txt"), ("Todos", "*.*")]
-        )
-        if not path_llave_privada:
-            return
-
-        with open(path_llave_privada, "rb") as f:
-            private_pem = f.read().decode("utf-8")
 
         try:
-            out_path = descargar_archivo_hibrido(enc_path, private_pem, encrypted_aes_key)
-            messagebox.showinfo("Descifrado Exitoso", f"Archivo listo en:\n{out_path}")
+            dec_path = descifrar_con_aes_maestra(enc_path, clave_maestra)
+            messagebox.showinfo("Descifrado", f"Archivo listo en:\n{dec_path}")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo descifrar el archivo:\n{e}")
+            messagebox.showerror("Error", f"No se pudo descifrar: {e}")
 
     # ================================
     # SELECCIÓN DE LISTA
@@ -476,7 +526,7 @@ class SecureApp(ctk.CTk):
         win.title(title)
         win.geometry("420x200")
         
-        win.transient(self)
+        win.transient(self) 
         win.grab_set()
 
         var = ctk.StringVar(value=items[0])
@@ -494,9 +544,6 @@ class SecureApp(ctk.CTk):
         self.wait_window(win)
         return result["value"]
 
-    # ================================
-    # LOGOUT
-    # ================================
     def handle_logout(self):
         self.current_user = None
         self.render_login()
