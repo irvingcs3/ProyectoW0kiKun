@@ -9,6 +9,9 @@ from db import get_connection
 from mysql.connector import Error
 import os
 
+# ============================================================
+#   GESTIÓN DE USUARIOS
+# ============================================================
 
 def create_user(username: str, password: str) -> Tuple[bool, str, Optional[User]]:
     if len(password) < 4 or len(password) > 20:
@@ -139,6 +142,10 @@ def list_users() -> List[User]:
     ]
 
 
+# ============================================================
+#   GESTIÓN DE LLAVES RSA
+# ============================================================
+
 def generate_and_store_keys(user: User) -> KeyPair:
     public_key, private_key = generar_par_claves_rsa()
 
@@ -187,6 +194,10 @@ def user_has_keys(user: User) -> bool:
     return get_keys_for_user(user) is not None
 
 
+# ============================================================
+#   GESTIÓN DE PROYECTOS Y PERMISOS (Lectura General)
+# ============================================================
+
 def obtener_proyectos_escritura(id_usuario: int):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -227,6 +238,10 @@ def get_projects_for_user(user: User):
     return rows
 
 
+# ============================================================
+#   ADMINISTRACIÓN DE PROYECTOS Y LLAVES
+# ============================================================
+
 def obtener_todos_los_proyectos():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -235,7 +250,6 @@ def obtener_todos_los_proyectos():
     cursor.close()
     conn.close()
     return rows
-
 
 def crear_nuevo_proyecto(nombre_proyecto: str, id_admin: int) -> Tuple[bool, str]:
     conn = get_connection()
@@ -266,7 +280,6 @@ def crear_nuevo_proyecto(nombre_proyecto: str, id_admin: int) -> Tuple[bool, str
         cursor.close()
         conn.close()
 
-
 def asignar_permiso_proyecto(id_proyecto: int, id_usuario: int, tipo_permiso: str) -> Tuple[bool, str]:
     conn = get_connection()
     cursor = conn.cursor()
@@ -285,6 +298,38 @@ def asignar_permiso_proyecto(id_proyecto: int, id_usuario: int, tipo_permiso: st
         cursor.close()
         conn.close()
 
+def admin_regenerar_llaves_usuario(id_usuario_objetivo: int) -> Tuple[bool, str, Optional[KeyPair]]:
+    conn = get_connection()
+    if not conn: return False, "Sin conexión.", None
+    
+    cursor = conn.cursor()
+    try:
+        public_key, private_key = generar_par_claves_rsa()
+        
+        cursor.execute("""
+            REPLACE INTO LlavesRSA (id_usuario, llave_publica, llave_privada)
+            VALUES (%s, %s, %s)
+        """, (id_usuario_objetivo, public_key, private_key))
+        
+        conn.commit()
+        
+        nuevo_par = KeyPair(
+            user_id=id_usuario_objetivo, 
+            public_key=public_key, 
+            private_key=private_key
+        )
+        return True, "Llaves regeneradas exitosamente.", nuevo_par
+
+    except Error as e:
+        return False, f"Error BD: {e}", None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+#   SUBIDA DE ARCHIVO (ESCRITURA SEGURA)
+# ============================================================
 
 def subir_archivo_hibrido(id_usuario, id_proyecto, ruta_archivo, ruta_llave_privada):
     conn = get_connection()
@@ -349,6 +394,10 @@ def subir_archivo_hibrido(id_usuario, id_proyecto, ruta_archivo, ruta_llave_priv
         if cursor: cursor.close()
         if conn: conn.close()
 
+
+# ============================================================
+#   DESCARGA DE ARCHIVO (LECTURA)
+# ============================================================
 
 def download_project_file(id_proyecto: int):
     conn = get_connection()

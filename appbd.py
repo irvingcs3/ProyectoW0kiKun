@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 import customtkinter as ctk
 from tkinter import messagebox
 from tkinter.filedialog import askopenfilename, asksaveasfilename
@@ -20,7 +20,8 @@ from storagebd import (
     subir_archivo_hibrido,
     crear_nuevo_proyecto,
     asignar_permiso_proyecto,
-    obtener_todos_los_proyectos
+    obtener_todos_los_proyectos,
+    admin_regenerar_llaves_usuario
 )
 
 # ---- CRYPTO MODULES ----
@@ -57,6 +58,7 @@ class SecureApp(ctk.CTk):
         self.dashboard = None
         self.tabs = None
         self.admin_tab = None
+        self.users_list_frame = None
 
         self.render_login()
 
@@ -289,12 +291,14 @@ class SecureApp(ctk.CTk):
         )
 
     # ================================
-    # TAB: ADMIN (solo líder)
+    # TAB: ADMIN (solo líder) - CORREGIDO VISUAL
     # ================================
     def _build_admin_tab(self) -> None:
         tab = self.tabs.add("Admin")
         tab.columnconfigure(0, weight=1)
         tab.columnconfigure(1, weight=1)
+        # IMPORTANTE: Asegurar que la fila de la lista se expanda
+        tab.rowconfigure(1, weight=1)
 
         # SECCIÓN 1: CREAR PROYECTO
         frame_crear = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=12)
@@ -324,20 +328,52 @@ class SecureApp(ctk.CTk):
 
         ctk.CTkButton(frame_permisos, text="Asignar", fg_color=self.accent, hover_color="#38b2a6", command=self.handle_assign_permission).pack(pady=10)
 
-        # SECCIÓN 3: LISTA DE USUARIOS (MONITOREO)
-        frame_lista = ctk.CTkScrollableFrame(tab, height=200, fg_color="#0f1c32", corner_radius=12)
-        frame_lista.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
+        # SECCIÓN 3: LISTA DE USUARIOS (CORREGIDO)
+        # sticky="nsew" es vital aquí para que ocupe todo el espacio de la fila 1
+        self.users_list_frame = ctk.CTkScrollableFrame(tab, fg_color="#0f1c32", corner_radius=12)
+        self.users_list_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
         
-        ctk.CTkLabel(frame_lista, text="Estado de Usuarios y Llaves", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
+        # Poblamos la lista inicialmente
+        self._refresh_users_list_ui()
 
-        for user in list_users():
-            f = ctk.CTkFrame(frame_lista, fg_color="#132744")
-            f.pack(fill="x", padx=5, pady=2)
-            ctk.CTkLabel(f, text=f"ID {user.id} | {user.username}").pack(side="left", padx=10)
-            status = "Llaves OK" if user_has_keys(user) else "Sin Llaves"
-            ctk.CTkLabel(f, text=status, text_color="gray").pack(side="right", padx=10)
+    def _refresh_users_list_ui(self, users_list: Optional[List[User]] = None):
+        """Limpia y reconstruye la lista visual de usuarios."""
+        if users_list is None:
+            users_list = list_users()
+
+        # Limpiar
+        for widget in self.users_list_frame.winfo_children():
+            widget.destroy()
+
+        ctk.CTkLabel(self.users_list_frame, text="Gestión de Usuarios (Recuperación de Llaves)", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
+
+        for user in users_list:
+            f = ctk.CTkFrame(self.users_list_frame, fg_color="#132744")
+            # pack con fill="x" asegura que ocupen el ancho
+            f.pack(fill="x", padx=5, pady=4)
+            
+            ctk.CTkLabel(f, text=f"ID {user.id} | {user.username}", width=150, anchor="w").pack(side="left", padx=10)
+            
+            status_text = "✅ Llaves OK" if user_has_keys(user) else "⚠️ Sin Llaves"
+            color_text = "#4fd1c5" if user_has_keys(user) else "orange"
+            ctk.CTkLabel(f, text=status_text, text_color=color_text, width=100).pack(side="left", padx=10)
+
+            if user.username != "lider": 
+                ctk.CTkButton(
+                    f, 
+                    text="♻️ Reset Llaves", 
+                    width=100, 
+                    fg_color="#e53e3e", 
+                    hover_color="#c53030",
+                    command=lambda u=user: self.handle_admin_reset_keys(u)
+                ).pack(side="right", padx=10, pady=5)
+        
+        # --- FORZAR ACTUALIZACIÓN DE GEOMETRÍA ---
+        # Esto ayuda al scrollbar a saber que hay contenido nuevo
+        self.users_list_frame.update_idletasks()
 
     def refresh_admin_lists(self):
+        """Actualiza todo con una sola fuente de verdad."""
         proyectos = obtener_todos_los_proyectos()
         if proyectos:
             vals = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
@@ -346,13 +382,18 @@ class SecureApp(ctk.CTk):
         else:
             self.combo_proyectos.configure(values=["Sin proyectos"])
 
+        # Fuente única de usuarios
         usuarios = list_users()
+        
         if usuarios:
             vals = [f"{u.id} - {u.username}" for u in usuarios]
             self.combo_usuarios.configure(values=vals)
             self.combo_usuarios.set(vals[0])
         else:
             self.combo_usuarios.configure(values=["Sin usuarios"])
+
+        # Pasar la MISMA lista a la UI de abajo
+        self._refresh_users_list_ui(usuarios)
 
     def handle_create_project(self):
         nombre = self.new_proj_entry.get()
@@ -384,6 +425,38 @@ class SecureApp(ctk.CTk):
         else:
             messagebox.showerror("Error", msg)
 
+    def handle_admin_reset_keys(self, target_user: User):
+        confirm = messagebox.askyesno(
+            "Confirmar Reset", 
+            f"¿Estás seguro de regenerar las llaves para '{target_user.username}'?\n\n"
+            "⚠️ Las firmas anteriores de este usuario dejarán de ser verificables.\n"
+            "⚠️ Se generará un nuevo archivo .pem que debes entregarle."
+        )
+        if not confirm: return
+
+        ok, msg, new_keypair = admin_regenerar_llaves_usuario(target_user.id)
+        
+        if ok and new_keypair:
+            save_path = asksaveasfilename(
+                title=f"Guardar NUEVA llave para {target_user.username}",
+                initialfile=f"NUEVA_LLAVE_{target_user.username}.txt",
+                defaultextension=".txt"
+            )
+            if save_path:
+                with open(save_path, "w", encoding="utf-8") as f:
+                    f.write("--- LLAVES REGENERADAS POR EL ADMIN ---\n")
+                    f.write(f"Usuario: {target_user.username}\n\n")
+                    f.write("Pública (Ya actualizada en BD):\n")
+                    f.write(new_keypair.public_key)
+                    f.write("\n\nPrivada (ENTREGAR AL USUARIO Y BORRAR):\n")
+                    f.write(new_keypair.private_key)
+                
+                messagebox.showinfo("Éxito", f"Llaves regeneradas.\nArchivo guardado en:\n{save_path}\n\nEntrégalo al usuario.")
+                self.refresh_admin_lists() 
+            else:
+                messagebox.showwarning("Atención", "Las llaves se regeneraron en BD pero no guardaste el archivo. El usuario no podrá firmar.")
+        else:
+            messagebox.showerror("Error", msg)
 
     # ================================
     # EVENTOS
