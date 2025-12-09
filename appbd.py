@@ -297,10 +297,8 @@ class SecureApp(ctk.CTk):
         tab = self.tabs.add("Admin")
         tab.columnconfigure(0, weight=1)
         tab.columnconfigure(1, weight=1)
-        # IMPORTANTE: Asegurar que la fila de la lista se expanda
         tab.rowconfigure(1, weight=1)
 
-        # SECCIÓN 1: CREAR PROYECTO
         frame_crear = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=12)
         frame_crear.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
@@ -309,7 +307,6 @@ class SecureApp(ctk.CTk):
         self.new_proj_entry.pack(pady=5, padx=10, fill="x")
         ctk.CTkButton(frame_crear, text="Crear", fg_color=self.accent, hover_color="#38b2a6", command=self.handle_create_project).pack(pady=10)
 
-        # SECCIÓN 2: ASIGNAR PERMISOS
         frame_permisos = ctk.CTkFrame(tab, fg_color="#0f1c32", corner_radius=12)
         frame_permisos.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
 
@@ -328,20 +325,15 @@ class SecureApp(ctk.CTk):
 
         ctk.CTkButton(frame_permisos, text="Asignar", fg_color=self.accent, hover_color="#38b2a6", command=self.handle_assign_permission).pack(pady=10)
 
-        # SECCIÓN 3: LISTA DE USUARIOS (CORREGIDO)
-        # sticky="nsew" es vital aquí para que ocupe todo el espacio de la fila 1
         self.users_list_frame = ctk.CTkScrollableFrame(tab, fg_color="#0f1c32", corner_radius=12)
         self.users_list_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
         
-        # Poblamos la lista inicialmente
         self._refresh_users_list_ui()
 
     def _refresh_users_list_ui(self, users_list: Optional[List[User]] = None):
-        """Limpia y reconstruye la lista visual de usuarios."""
         if users_list is None:
             users_list = list_users()
 
-        # Limpiar
         for widget in self.users_list_frame.winfo_children():
             widget.destroy()
 
@@ -349,7 +341,6 @@ class SecureApp(ctk.CTk):
 
         for user in users_list:
             f = ctk.CTkFrame(self.users_list_frame, fg_color="#132744")
-            # pack con fill="x" asegura que ocupen el ancho
             f.pack(fill="x", padx=5, pady=4)
             
             ctk.CTkLabel(f, text=f"ID {user.id} | {user.username}", width=150, anchor="w").pack(side="left", padx=10)
@@ -368,12 +359,9 @@ class SecureApp(ctk.CTk):
                     command=lambda u=user: self.handle_admin_reset_keys(u)
                 ).pack(side="right", padx=10, pady=5)
         
-        # --- FORZAR ACTUALIZACIÓN DE GEOMETRÍA ---
-        # Esto ayuda al scrollbar a saber que hay contenido nuevo
         self.users_list_frame.update_idletasks()
 
     def refresh_admin_lists(self):
-        """Actualiza todo con una sola fuente de verdad."""
         proyectos = obtener_todos_los_proyectos()
         if proyectos:
             vals = [f"{p['id_proyecto']} - {p['nombre_proyecto']}" for p in proyectos]
@@ -382,7 +370,6 @@ class SecureApp(ctk.CTk):
         else:
             self.combo_proyectos.configure(values=["Sin proyectos"])
 
-        # Fuente única de usuarios
         usuarios = list_users()
         
         if usuarios:
@@ -392,7 +379,6 @@ class SecureApp(ctk.CTk):
         else:
             self.combo_usuarios.configure(values=["Sin usuarios"])
 
-        # Pasar la MISMA lista a la UI de abajo
         self._refresh_users_list_ui(usuarios)
 
     def handle_create_project(self):
