@@ -1,9 +1,3 @@
-"""Utilidades criptográficas centradas en hashing y generación de llaves.
-
-Este módulo se diseñó para ser fácilmente reemplazable por bibliotecas
-criptográficas reales (ej. cryptography, pyca/openssl) cuando se conecte a una
-base de datos y un backend definitivo.
-"""
 import hashlib
 import os
 import secrets

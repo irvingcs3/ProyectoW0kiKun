@@ -328,7 +328,7 @@ def admin_regenerar_llaves_usuario(id_usuario_objetivo: int) -> Tuple[bool, str,
 
 
 # ============================================================
-#   SUBIDA DE ARCHIVO (ESCRITURA SEGURA)
+#   SUBIDA DE ARCHIVO 
 # ============================================================
 
 def subir_archivo_hibrido(id_usuario, id_proyecto, ruta_archivo, ruta_llave_privada):

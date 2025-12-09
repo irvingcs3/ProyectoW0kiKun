@@ -1,4 +1,3 @@
-"""Modelos de datos para el simulador de base de datos."""
 from dataclasses import dataclass
 
 

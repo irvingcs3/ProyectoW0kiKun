@@ -1,4 +1,3 @@
-# hash_utils.py
 import hashlib
 
 def hash_archivo(path):
